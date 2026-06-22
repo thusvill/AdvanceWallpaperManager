@@ -6,10 +6,21 @@
 #include <android/log.h>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
+#include <vector>
 
 #define LOG_TAG "NativeRenderer"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+inline float clampf(float v, float lo, float hi) {
+    return std::max(lo, std::min(v, hi));
+}
+
+inline float smoothstep(float edge0, float edge1, float x) {
+    float t = clampf((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
 
 inline uint32_t blend(uint32_t s, uint32_t d) {
     uint8_t a = (s >> 24) & 0xFF;
@@ -53,12 +64,10 @@ void drawBitmap(ANativeWindow_Buffer* buffer, JNIEnv* env, jobject bitmap, int o
     AndroidBitmap_unlockPixels(env, bitmap);
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_thusvill_advancewallpapermanager_CustomDepthWallpaperService_renderNativeFrame(
+// Unified rendering logic for both Service and MainActivity
+void internalRenderFrame(
         JNIEnv* env,
-        jobject thiz,
         jobject surface,
-        jstring time_text,
         jobject base_bitmap,
         jobject mask_bitmap,
         jobject time_bitmap,
@@ -80,13 +89,15 @@ Java_com_thusvill_advancewallpapermanager_CustomDepthWallpaperService_renderNati
 
     if (base_bitmap) {
         drawBitmap(&buffer, env, base_bitmap, 0, 0, false);
+    } else {
+        memset(buffer.bits, 0, buffer.stride * buffer.height * 4);
     }
 
     if (time_bitmap) {
         AndroidBitmapInfo tInfo;
         AndroidBitmap_getInfo(env, time_bitmap, &tInfo);
-        int tx = (int)(w * clock_x) - (int)(tInfo.width / 2);
-        int ty = (int)(h * clock_y) - (int)(tInfo.height / 2);
+        int tx = (int)((float)w * clock_x) - (int)(tInfo.width / 2);
+        int ty = (int)((float)h * clock_y) - (int)(tInfo.height / 2);
         drawBitmap(&buffer, env, time_bitmap, tx, ty, true);
     }
 
@@ -96,6 +107,34 @@ Java_com_thusvill_advancewallpapermanager_CustomDepthWallpaperService_renderNati
 
     ANativeWindow_unlockAndPost(window);
     ANativeWindow_release(window);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_thusvill_advancewallpapermanager_CustomDepthWallpaperService_renderNativeFrame(
+        JNIEnv* env,
+        jobject thiz,
+        jobject surface,
+        jstring time_text,
+        jobject base_bitmap,
+        jobject mask_bitmap,
+        jobject time_bitmap,
+        jfloat clock_x,
+        jfloat clock_y) {
+    internalRenderFrame(env, surface, base_bitmap, mask_bitmap, time_bitmap, clock_x, clock_y);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_thusvill_advancewallpapermanager_MainActivity_renderNativeFrame(
+        JNIEnv* env,
+        jobject thiz,
+        jobject surface,
+        jstring time_text,
+        jobject base_bitmap,
+        jobject mask_bitmap,
+        jobject time_bitmap,
+        jfloat clock_x,
+        jfloat clock_y) {
+    internalRenderFrame(env, surface, base_bitmap, mask_bitmap, time_bitmap, clock_x, clock_y);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -138,7 +177,6 @@ Java_com_thusvill_advancewallpapermanager_MainActivity_extractMaskNative(
     int width = (int)origInfo.width;
     int height = (int)origInfo.height;
 
-    // Scale factors from Original to Mask coordinates
     float scaleX = (float)mask_w / (float)width;
     float scaleY = (float)mask_h / (float)height;
 
@@ -165,6 +203,300 @@ Java_com_thusvill_advancewallpapermanager_MainActivity_extractMaskNative(
     AndroidBitmap_unlockPixels(env, original_bitmap);
     AndroidBitmap_unlockPixels(env, output_bitmap);
 
+    return JNI_TRUE;
+}
+
+static float sampleMaskBilinear(const float* mask, int maskW, int maskH, float x, float y) {
+    x = clampf(x, 0.0f, (float)(maskW - 1));
+    y = clampf(y, 0.0f, (float)(maskH - 1));
+
+    int x0 = (int)std::floor(x);
+    int y0 = (int)std::floor(y);
+    int x1 = std::min(x0 + 1, maskW - 1);
+    int y1 = std::min(y0 + 1, maskH - 1);
+    float tx = x - (float)x0;
+    float ty = y - (float)y0;
+
+    float a = mask[y0 * maskW + x0] * (1.0f - tx) + mask[y0 * maskW + x1] * tx;
+    float b = mask[y1 * maskW + x0] * (1.0f - tx) + mask[y1 * maskW + x1] * tx;
+    return a * (1.0f - ty) + b * ty;
+}
+
+static void morph(const std::vector<uint8_t>& src, std::vector<uint8_t>& dst, int w, int h, int radius, bool dilate) {
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            uint8_t result = dilate ? 0 : 255;
+            for (int ky = -radius; ky <= radius; ++ky) {
+                int yy = std::min(std::max(y + ky, 0), h - 1);
+                for (int kx = -radius; kx <= radius; ++kx) {
+                    int xx = std::min(std::max(x + kx, 0), w - 1);
+                    uint8_t value = src[yy * w + xx];
+                    result = dilate ? std::max(result, value) : std::min(result, value);
+                }
+            }
+            dst[y * w + x] = result;
+        }
+    }
+}
+
+static void boxBlurPass(const std::vector<float>& src, std::vector<float>& dst, int w, int h, int radius, bool horizontal) {
+    float divisor = (float)(radius * 2 + 1);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            float sum = 0.0f;
+            for (int k = -radius; k <= radius; ++k) {
+                int xx = horizontal ? std::min(std::max(x + k, 0), w - 1) : x;
+                int yy = horizontal ? y : std::min(std::max(y + k, 0), h - 1);
+                sum += src[yy * w + xx];
+            }
+            dst[y * w + x] = sum / divisor;
+        }
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_thusvill_advancewallpapermanager_MainActivity_extractHybridMaskNative(
+        JNIEnv* env,
+        jobject thiz,
+        jobject original_bitmap,
+        jobject mask_buffer,
+        jint mask_w,
+        jint mask_h,
+        jobject output_bitmap,
+        jfloat confidence_threshold,
+        jfloat edge_threshold,
+        jint feather_radius) {
+
+    AndroidBitmapInfo origInfo;
+    void* origPixels;
+    if (AndroidBitmap_getInfo(env, original_bitmap, &origInfo) < 0 ||
+        AndroidBitmap_lockPixels(env, original_bitmap, &origPixels) < 0) {
+        return JNI_FALSE;
+    }
+
+    AndroidBitmapInfo outInfo;
+    void* outPixels;
+    if (AndroidBitmap_getInfo(env, output_bitmap, &outInfo) < 0 ||
+        AndroidBitmap_lockPixels(env, output_bitmap, &outPixels) < 0) {
+        AndroidBitmap_unlockPixels(env, original_bitmap);
+        return JNI_FALSE;
+    }
+
+    float* mask = (float*)env->GetDirectBufferAddress(mask_buffer);
+    if (!mask || mask_w <= 0 || mask_h <= 0) {
+        AndroidBitmap_unlockPixels(env, original_bitmap);
+        AndroidBitmap_unlockPixels(env, output_bitmap);
+        return JNI_FALSE;
+    }
+
+    int w = (int)origInfo.width;
+    int h = (int)origInfo.height;
+    uint32_t srcStride = origInfo.stride / 4;
+    uint32_t dstStride = outInfo.stride / 4;
+    uint32_t* src = (uint32_t*)origPixels;
+    uint32_t* dst = (uint32_t*)outPixels;
+
+    std::vector<uint8_t> gray(w * h);
+    std::vector<float> confidence(w * h);
+    std::vector<uint8_t> hardMask(w * h);
+    std::vector<uint8_t> scratch(w * h);
+
+    float scaleX = (float)mask_w / (float)w;
+    float scaleY = (float)mask_h / (float)h;
+    float threshold = clampf(confidence_threshold, 0.01f, 0.95f);
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            uint32_t p = src[y * srcStride + x];
+            uint8_t r = (p >> 16) & 0xFF;
+            uint8_t g = (p >> 8) & 0xFF;
+            uint8_t b = p & 0xFF;
+            gray[y * w + x] = (uint8_t)(0.299f * (float)r + 0.587f * (float)g + 0.114f * (float)b);
+
+            float mx = ((float)x + 0.5f) * scaleX - 0.5f;
+            float my = ((float)y + 0.5f) * scaleY - 0.5f;
+            float c = clampf(sampleMaskBilinear(mask, mask_w, mask_h, mx, my), 0.0f, 1.0f);
+            confidence[y * w + x] = c;
+            hardMask[y * w + x] = c >= threshold ? 255 : 0;
+        }
+    }
+
+    morph(hardMask, scratch, w, h, 2, true);
+    morph(scratch, hardMask, w, h, 2, false);
+    morph(hardMask, scratch, w, h, 1, false);
+    morph(scratch, hardMask, w, h, 1, true);
+
+    int radius = std::max(1, std::min((int)feather_radius, 24));
+    std::vector<float> alpha(w * h);
+    std::vector<float> blurScratch(w * h);
+    for (int i = 0; i < w * h; ++i) {
+        alpha[i] = hardMask[i] > 0 ? 1.0f : 0.0f;
+    }
+    boxBlurPass(alpha, blurScratch, w, h, radius, true);
+    boxBlurPass(blurScratch, alpha, w, h, radius, false);
+    boxBlurPass(alpha, blurScratch, w, h, std::max(1, radius / 2), true);
+    boxBlurPass(blurScratch, alpha, w, h, std::max(1, radius / 2), false);
+
+    int gx[3][3] = {{-3, 0, 3}, {-10, 0, 10}, {-3, 0, 3}};
+    int gy[3][3] = {{-3, -10, -3}, {0, 0, 0}, {3, 10, 3}};
+    float edgeCutoff = clampf(edge_threshold, 0.01f, 0.5f);
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int idx = y * w + x;
+            float edge = 0.0f;
+            if (x > 0 && y > 0 && x < w - 1 && y < h - 1) {
+                int sumX = 0;
+                int sumY = 0;
+                for (int ky = -1; ky <= 1; ++ky) {
+                    for (int kx = -1; kx <= 1; ++kx) {
+                        uint8_t val = gray[(y + ky) * w + (x + kx)];
+                        sumX += val * gx[ky + 1][kx + 1];
+                        sumY += val * gy[ky + 1][kx + 1];
+                    }
+                }
+                edge = clampf(std::sqrt((float)(sumX * sumX + sumY * sumY)) / 2048.0f, 0.0f, 1.0f);
+            }
+
+            float hard = hardMask[idx] > 0 ? 1.0f : 0.0f;
+            float confidenceAlpha = smoothstep(threshold * 0.55f, std::min(threshold + 0.35f, 0.98f), confidence[idx]);
+            float soft = clampf(alpha[idx] * 0.72f + confidenceAlpha * 0.28f, 0.0f, 1.0f);
+            float edgeWeight = smoothstep(edgeCutoff, std::min(edgeCutoff + 0.22f, 0.75f), edge);
+            float finalAlpha = clampf(soft * (1.0f - edgeWeight) + hard * edgeWeight, 0.0f, 1.0f);
+            uint8_t a = (uint8_t)(finalAlpha * 255.0f + 0.5f);
+
+            dst[y * dstStride + x] = (src[y * srcStride + x] & 0x00FFFFFF) | ((uint32_t)a << 24);
+        }
+    }
+
+    AndroidBitmap_unlockPixels(env, original_bitmap);
+    AndroidBitmap_unlockPixels(env, output_bitmap);
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_thusvill_advancewallpapermanager_MainActivity_extractSaliencyMatteNative(
+        JNIEnv* env,
+        jobject thiz,
+        jobject original_bitmap,
+        jobject mask_buffer,
+        jint mask_w,
+        jint mask_h,
+        jobject output_bitmap,
+        jfloat matte_threshold,
+        jint feather_radius,
+        jint cleanup_radius,
+        jfloat edge_lock) {
+
+    AndroidBitmapInfo origInfo;
+    void* origPixels;
+    if (AndroidBitmap_getInfo(env, original_bitmap, &origInfo) < 0 ||
+        AndroidBitmap_lockPixels(env, original_bitmap, &origPixels) < 0) {
+        return JNI_FALSE;
+    }
+
+    AndroidBitmapInfo outInfo;
+    void* outPixels;
+    if (AndroidBitmap_getInfo(env, output_bitmap, &outInfo) < 0 ||
+        AndroidBitmap_lockPixels(env, output_bitmap, &outPixels) < 0) {
+        AndroidBitmap_unlockPixels(env, original_bitmap);
+        return JNI_FALSE;
+    }
+
+    float* mask = (float*)env->GetDirectBufferAddress(mask_buffer);
+    if (!mask || mask_w <= 0 || mask_h <= 0) {
+        AndroidBitmap_unlockPixels(env, original_bitmap);
+        AndroidBitmap_unlockPixels(env, output_bitmap);
+        return JNI_FALSE;
+    }
+
+    int w = (int)origInfo.width;
+    int h = (int)origInfo.height;
+    uint32_t srcStride = origInfo.stride / 4;
+    uint32_t dstStride = outInfo.stride / 4;
+    uint32_t* src = (uint32_t*)origPixels;
+    uint32_t* dst = (uint32_t*)outPixels;
+
+    std::vector<uint8_t> gray(w * h);
+    std::vector<float> confidence(w * h);
+    std::vector<uint8_t> hardMask(w * h);
+    std::vector<uint8_t> scratch(w * h);
+
+    float scaleX = (float)mask_w / (float)w;
+    float scaleY = (float)mask_h / (float)h;
+    float threshold = clampf(matte_threshold, 0.01f, 0.95f);
+    int cleanup = std::max(0, std::min((int)cleanup_radius, 8));
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            uint32_t p = src[y * srcStride + x];
+            uint8_t r = (p >> 16) & 0xFF;
+            uint8_t g = (p >> 8) & 0xFF;
+            uint8_t b = p & 0xFF;
+            gray[y * w + x] = (uint8_t)(0.299f * (float)r + 0.587f * (float)g + 0.114f * (float)b);
+
+            float mx = ((float)x + 0.5f) * scaleX - 0.5f;
+            float my = ((float)y + 0.5f) * scaleY - 0.5f;
+            float c = clampf(sampleMaskBilinear(mask, mask_w, mask_h, mx, my), 0.0f, 1.0f);
+            confidence[y * w + x] = c;
+            hardMask[y * w + x] = c >= threshold ? 255 : 0;
+        }
+    }
+
+    if (cleanup > 0) {
+        morph(hardMask, scratch, w, h, cleanup, true);
+        morph(scratch, hardMask, w, h, cleanup, false);
+        morph(hardMask, scratch, w, h, std::max(1, cleanup / 2), false);
+        morph(scratch, hardMask, w, h, std::max(1, cleanup / 2), true);
+    }
+
+    int radius = std::max(1, std::min((int)feather_radius, 32));
+    std::vector<float> alpha(w * h);
+    std::vector<float> blurScratch(w * h);
+    for (int i = 0; i < w * h; ++i) {
+        float confidenceAlpha = smoothstep(threshold * 0.42f, std::min(threshold + 0.42f, 0.99f), confidence[i]);
+        float hard = hardMask[i] > 0 ? 1.0f : 0.0f;
+        alpha[i] = clampf(hard * 0.65f + confidenceAlpha * 0.35f, 0.0f, 1.0f);
+    }
+    boxBlurPass(alpha, blurScratch, w, h, radius, true);
+    boxBlurPass(blurScratch, alpha, w, h, radius, false);
+    boxBlurPass(alpha, blurScratch, w, h, std::max(1, radius / 3), true);
+    boxBlurPass(blurScratch, alpha, w, h, std::max(1, radius / 3), false);
+
+    int gx[3][3] = {{-3, 0, 3}, {-10, 0, 10}, {-3, 0, 3}};
+    int gy[3][3] = {{-3, -10, -3}, {0, 0, 0}, {3, 10, 3}};
+    float lock = clampf(edge_lock, 0.0f, 1.0f);
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int idx = y * w + x;
+            float edge = 0.0f;
+            if (x > 0 && y > 0 && x < w - 1 && y < h - 1) {
+                int sumX = 0;
+                int sumY = 0;
+                for (int ky = -1; ky <= 1; ++ky) {
+                    for (int kx = -1; kx <= 1; ++kx) {
+                        uint8_t val = gray[(y + ky) * w + (x + kx)];
+                        sumX += val * gx[ky + 1][kx + 1];
+                        sumY += val * gy[ky + 1][kx + 1];
+                    }
+                }
+                edge = clampf(std::sqrt((float)(sumX * sumX + sumY * sumY)) / 2048.0f, 0.0f, 1.0f);
+            }
+
+            float hard = hardMask[idx] > 0 ? 1.0f : 0.0f;
+            float confidenceAlpha = smoothstep(threshold * 0.45f, std::min(threshold + 0.38f, 0.99f), confidence[idx]);
+            float soft = clampf(alpha[idx] * 0.65f + confidenceAlpha * 0.35f, 0.0f, 1.0f);
+            float edgeWeight = smoothstep(0.08f, 0.42f, edge) * lock;
+            float finalAlpha = clampf(soft * (1.0f - edgeWeight) + hard * edgeWeight, 0.0f, 1.0f);
+            uint8_t a = (uint8_t)(finalAlpha * 255.0f + 0.5f);
+
+            dst[y * dstStride + x] = (src[y * srcStride + x] & 0x00FFFFFF) | ((uint32_t)a << 24);
+        }
+    }
+
+    AndroidBitmap_unlockPixels(env, original_bitmap);
+    AndroidBitmap_unlockPixels(env, output_bitmap);
     return JNI_TRUE;
 }
 
@@ -196,19 +528,19 @@ Java_com_thusvill_advancewallpapermanager_MainActivity_extractEdgesNative(
     uint32_t* src = (uint32_t*)pixels;
     uint32_t* dst = (uint32_t*)outPixels;
 
-    // Gray scale buffer for processing
-    uint8_t* gray = (uint8_t*)malloc(w * h);
-    for (int i = 0; i < w * h; ++i) {
-        uint32_t p = src[i];
-        uint8_t r = (p >> 16) & 0xFF;
-        uint8_t g = (p >> 8) & 0xFF;
-        uint8_t b = p & 0xFF;
-        gray[i] = (uint8_t)(0.299f * r + 0.587f * g + 0.114f * b);
+    std::vector<uint8_t> gray(w * h);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            uint32_t p = src[y * stride + x];
+            uint8_t r = (p >> 16) & 0xFF;
+            uint8_t g = (p >> 8) & 0xFF;
+            uint8_t b = p & 0xFF;
+            gray[y * w + x] = (uint8_t)(0.299f * (float)r + 0.587f * (float)g + 0.114f * (float)b);
+        }
     }
 
-    // Sobel Operator
-    int gx[3][3] = {{-1, 0, 1}, {-2, 0, 2}, {-1, 0, 1}};
-    int gy[3][3] = {{-1, -2, -1}, {0, 0, 0}, {1, 2, 1}};
+    int gx[3][3] = {{-3, 0, 3}, {-10, 0, 10}, {-3, 0, 3}};
+    int gy[3][3] = {{-3, -10, -3}, {0, 0, 0}, {3, 10, 3}};
 
     for (int y = 1; y < h - 1; ++y) {
         for (int x = 1; x < w - 1; ++x) {
@@ -221,8 +553,9 @@ Java_com_thusvill_advancewallpapermanager_MainActivity_extractEdgesNative(
                     sumY += val * gy[ky + 1][kx + 1];
                 }
             }
-            int mag = abs(sumX) + abs(sumY);
-            if (mag > (int)(threshold * 255.0f)) {
+            float mag = std::sqrt((float)(sumX * sumX + sumY * sumY));
+
+            if (mag > (threshold * 1024.0f)) {
                 dst[y * stride + x] = src[y * stride + x];
             } else {
                 dst[y * stride + x] = 0x00000000;
@@ -230,7 +563,6 @@ Java_com_thusvill_advancewallpapermanager_MainActivity_extractEdgesNative(
         }
     }
 
-    free(gray);
     AndroidBitmap_unlockPixels(env, original_bitmap);
     AndroidBitmap_unlockPixels(env, output_bitmap);
     return JNI_TRUE;

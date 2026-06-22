@@ -23,22 +23,70 @@
             app:layout_constraintEnd_toEndOf="parent"
             android:layout_marginTop="16dp"/>
 
+        <!-- Live Preview Container -->
+        <FrameLayout
+            android:id="@+id/preview_container"
+            android:layout_width="0dp"
+            android:layout_height="300dp"
+            android:layout_marginTop="16dp"
+            android:background="#000"
+            app:layout_constraintTop_toBottomOf="@id/tv_title"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <SurfaceView
+                android:id="@+id/surface_preview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
         <Button
             android:id="@+id/btn_select_image"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="Step 1a: Select Photo (AI Depth)"
-            app:layout_constraintTop_toBottomOf="@id/tv_title"
+            android:text="Step 1a: Select Photo (Selfie AI)"
+            app:layout_constraintTop_toBottomOf="@id/preview_container"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             android:layout_marginTop="24dp"/>
 
         <Button
+            android:id="@+id/btn_deep_lab"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Step 1b: Select Photo (DeepLabV3 MobileNetV2)"
+            app:layout_constraintTop_toBottomOf="@id/btn_select_image"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="8dp"/>
+
+        <Button
             android:id="@+id/btn_extract_edges"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="Step 1b: Select Photo (Math Edge)"
-            app:layout_constraintTop_toBottomOf="@id/btn_select_image"
+            android:text="Step 1c: Select Photo (Math Edge)"
+            app:layout_constraintTop_toBottomOf="@id/btn_deep_lab"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="8dp"/>
+
+        <Button
+            android:id="@+id/btn_hybrid_depth"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Step 1d: Select Photo (Hybrid Depth)"
+            app:layout_constraintTop_toBottomOf="@id/btn_extract_edges"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="8dp"/>
+
+        <Button
+            android:id="@+id/btn_saliency_matte"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Step 1e: Select Photo (Saliency Matte)"
+            app:layout_constraintTop_toBottomOf="@id/btn_hybrid_depth"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             android:layout_marginTop="8dp"/>
@@ -50,7 +98,154 @@
             android:layout_height="wrap_content"
             android:visibility="gone"
             android:indeterminate="true"
-            app:layout_constraintTop_toBottomOf="@id/btn_extract_edges"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/btn_saliency_matte"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/tv_deep_lab_settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DeepLab Controls"
+            android:textStyle="bold"
+            app:layout_constraintTop_toBottomOf="@id/pb_extraction"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="24dp"/>
+
+        <TextView
+            android:id="@+id/tv_label_deep_lab_class"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DeepLab Target: 15 (Person)"
+            app:layout_constraintTop_toBottomOf="@id/tv_deep_lab_settings"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="16dp"/>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_deep_lab_class"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0"
+            android:valueTo="20"
+            android:value="15"
+            android:stepSize="1"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_deep_lab_class"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/tv_label_deep_lab_confidence"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DeepLab Min Confidence: 0.00"
+            app:layout_constraintTop_toBottomOf="@id/slider_deep_lab_class"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_deep_lab_confidence"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.0"
+            android:valueTo="1.0"
+            android:value="0.0"
+            android:stepSize="0.01"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_deep_lab_confidence"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/tv_saliency_settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Saliency Matte Controls"
+            android:textStyle="bold"
+            app:layout_constraintTop_toBottomOf="@id/slider_deep_lab_confidence"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="16dp"/>
+
+        <TextView
+            android:id="@+id/tv_label_saliency_threshold"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Saliency Threshold: 0.35"
+            app:layout_constraintTop_toBottomOf="@id/tv_saliency_settings"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="12dp"/>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_saliency_threshold"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.05"
+            android:valueTo="0.95"
+            android:value="0.35"
+            android:stepSize="0.01"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_saliency_threshold"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/tv_label_saliency_feather"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Matte Feather: 10px"
+            app:layout_constraintTop_toBottomOf="@id/slider_saliency_threshold"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_saliency_feather"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="1"
+            android:valueTo="24"
+            android:value="10"
+            android:stepSize="1"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_saliency_feather"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/tv_label_saliency_cleanup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Mask Cleanup: 2px"
+            app:layout_constraintTop_toBottomOf="@id/slider_saliency_feather"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_saliency_cleanup"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0"
+            android:valueTo="6"
+            android:value="2"
+            android:stepSize="1"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_saliency_cleanup"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/tv_label_saliency_edge_lock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Edge Lock: 0.50"
+            app:layout_constraintTop_toBottomOf="@id/slider_saliency_cleanup"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_saliency_edge_lock"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.0"
+            android:valueTo="1.0"
+            android:value="0.5"
+            android:stepSize="0.01"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_saliency_edge_lock"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -60,7 +255,7 @@
             android:layout_height="wrap_content"
             android:text="Step 2: Clock Customization"
             android:textStyle="bold"
-            app:layout_constraintTop_toBottomOf="@id/pb_extraction"
+            app:layout_constraintTop_toBottomOf="@id/slider_saliency_edge_lock"
             app:layout_constraintStart_toStartOf="parent"
             android:layout_marginTop="24dp"/>
 
@@ -83,12 +278,12 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"/>
 
-        <!-- Clock Y -->
+        <!-- Vertical Position -->
         <TextView
             android:id="@+id/tv_label_y"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Vertical Position"
+            android:text="Vertical Position (Clock Height)"
             app:layout_constraintTop_toBottomOf="@id/slider_x"
             app:layout_constraintStart_toStartOf="parent"
             android:layout_marginTop="8dp"/>
@@ -140,12 +335,52 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"/>
 
+        <!-- Clock Stretch -->
+        <TextView
+            android:id="@+id/tv_label_stretch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Clock Vertical Stretch (iOS Style)"
+            app:layout_constraintTop_toBottomOf="@id/slider_thickness"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_stretch"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.5"
+            android:valueTo="3.0"
+            android:value="1.0"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_stretch"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <!-- Edge Sensitivity -->
+        <TextView
+            android:id="@+id/tv_label_threshold"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Math Edge Sensitivity (Low = More Detail)"
+            app:layout_constraintTop_toBottomOf="@id/slider_stretch"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_threshold"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.01"
+            android:valueTo="0.5"
+            android:value="0.1"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_threshold"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
         <Button
             android:id="@+id/btn_apply"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:text="Step 3: Set Live Wallpaper"
-            app:layout_constraintTop_toBottomOf="@id/slider_thickness"
+            app:layout_constraintTop_toBottomOf="@id/slider_threshold"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             android:layout_marginTop="24dp"/>

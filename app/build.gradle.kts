@@ -5,6 +5,9 @@ plugins {
 
 android {
     namespace = "com.thusvill.advancewallpapermanager"
+    androidResources {
+        noCompress("tflite")
+    }
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -44,16 +47,16 @@ android {
         viewBinding = true
     }
 }
-
 dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
-    
-    // Play Services TFLite (Maximum stability, no namespace conflicts)
-    implementation("com.google.android.gms:play-services-tflite-java:16.5.0")
-    implementation("com.google.android.gms:play-services-tflite-support:16.5.0")
+
+    implementation(files("libs/tensorflow-lite-api-2.10.0-api.jar"))
+    implementation("org.tensorflow:tensorflow-lite:2.10.0") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)
