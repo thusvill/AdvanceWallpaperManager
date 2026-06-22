@@ -13,9 +13,13 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.util.DisplayMetrics
+import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -32,6 +36,7 @@ import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.min
 
 class MainActivity : AppCompatActivity() {
 
@@ -39,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("wallpaper_prefs", Context.MODE_PRIVATE) }
     
     private var currentConfig = WallpaperConfig()
+    private var activeExtractionMode: ExtractionMode = ExtractionMode.SELFIE_AI
     private var selfieSegmenter: TfliteSelfieSegmenter? = null
     private var deepLabSegmenter: TfliteSelfieSegmenter? = null
     private var deepLabPreviewJob: Job? = null
@@ -51,6 +57,8 @@ class MainActivity : AppCompatActivity() {
         textAlign = Paint.Align.CENTER
     }
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    private var dragOffsetX = 0f
+    private var dragOffsetY = 0f
 
     /**
      * Native JNI call to handle heavy-duty pixel masking
@@ -110,31 +118,7 @@ class MainActivity : AppCompatActivity() {
 
     private val selectImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
-            processSelectedImage(it, ExtractionMode.SELFIE_AI)
-        }
-    }
-
-    private val deepLabLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            processSelectedImage(it, ExtractionMode.DEEPLAB_V3_MOBILENET_V2)
-        }
-    }
-
-    private val edgeDetectionLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            processSelectedImage(it, ExtractionMode.EDGE)
-        }
-    }
-
-    private val hybridDepthLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            processSelectedImage(it, ExtractionMode.HYBRID_DEPTH)
-        }
-    }
-
-    private val saliencyMatteLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            processSelectedImage(it, ExtractionMode.SALIENCY_MATTE)
+            processSelectedImage(it, activeExtractionMode)
         }
     }
 
@@ -149,11 +133,12 @@ class MainActivity : AppCompatActivity() {
         initUi()
         initPreview()
 
-        binding.btnSelectImage.setOnClickListener { selectImageLauncher.launch("image/*") }
-        binding.btnDeepLab.setOnClickListener { deepLabLauncher.launch("image/*") }
-        binding.btnExtractEdges.setOnClickListener { edgeDetectionLauncher.launch("image/*") }
-        binding.btnHybridDepth.setOnClickListener { hybridDepthLauncher.launch("image/*") }
-        binding.btnSaliencyMatte.setOnClickListener { saliencyMatteLauncher.launch("image/*") }
+        binding.btnInitialSelectImage.setOnClickListener {
+            selectImageLauncher.launch("image/*")
+        }
+        binding.btnSelectImage.setOnClickListener {
+            selectImageLauncher.launch("image/*")
+        }
 
         binding.btnApply.setOnClickListener {
             saveConfig()
@@ -165,23 +150,27 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
             sendBroadcast(Intent("com.thusvill.advancewallpapermanager.UPDATE_CONFIG"))
         }
+        updateEditorVisibility()
     }
 
     private fun initPreview() {
+        syncPreviewAspectRatio()
+        binding.previewContainer.setOnTouchListener { _, event ->
+            handleClockTouch(event)
+        }
+        binding.clockDragHint.isClickable = false
         binding.surfacePreview.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
-                // Set fixed size for preview to maintain aspect ratio and prevent distortion
-                val w = binding.surfacePreview.width
-                val h = binding.surfacePreview.height
-                if (w > 0 && h > 0) {
-                    holder.setFixedSize(w, h)
-                }
+                holder.setSizeFromLayout()
                 updatePreviewBitmaps()
                 requestRender()
+                updateClockDragHandle()
             }
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                holder.setSizeFromLayout()
                 updatePreviewBitmaps()
                 requestRender()
+                updateClockDragHandle()
             }
             override fun surfaceDestroyed(holder: SurfaceHolder) {
                 previewBaseBitmap?.recycle()
@@ -192,6 +181,42 @@ class MainActivity : AppCompatActivity() {
                 previewTimeBitmap = null
             }
         })
+    }
+
+    private fun syncPreviewAspectRatio() {
+        binding.previewContainer.post {
+            val metrics = wallpaperTargetMetrics()
+            val availableWidth = binding.rootLayout.width - binding.rootLayout.paddingStart - binding.rootLayout.paddingEnd
+            if (metrics.widthPixels <= 0 || metrics.heightPixels <= 0 || availableWidth <= 0) {
+                return@post
+            }
+
+            val maxHeight = (metrics.heightPixels * PREVIEW_SCREEN_HEIGHT_FRACTION).toInt()
+            var targetWidth = (maxHeight * metrics.widthPixels.toFloat() / metrics.heightPixels.toFloat()).toInt()
+            var targetHeight = maxHeight
+
+            if (targetWidth > availableWidth) {
+                targetWidth = availableWidth
+                targetHeight = (targetWidth * metrics.heightPixels.toFloat() / metrics.widthPixels.toFloat()).toInt()
+            }
+
+            val cardParams = binding.previewCard.layoutParams
+            if (cardParams.width != targetWidth) {
+                cardParams.width = targetWidth
+                binding.previewCard.layoutParams = cardParams
+            }
+
+            val previewParams = binding.previewContainer.layoutParams
+            if (previewParams.height != targetHeight) {
+                previewParams.height = targetHeight
+                binding.previewContainer.layoutParams = previewParams
+            }
+            binding.previewContainer.post {
+                updatePreviewBitmaps()
+                requestRender()
+                updateClockDragHandle()
+            }
+        }
     }
 
     private fun updatePreviewBitmaps() {
@@ -253,16 +278,63 @@ class MainActivity : AppCompatActivity() {
             currentConfig.clockX,
             currentConfig.clockY
         )
+        updateClockDragHandle()
+    }
+
+    private fun handleClockTouch(event: MotionEvent): Boolean {
+        val width = binding.previewContainer.width.toFloat()
+        val height = binding.previewContainer.height.toFloat()
+        if (width <= 0f || height <= 0f) return false
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                dragOffsetX = event.x - currentConfig.clockX * width
+                dragOffsetY = event.y - currentConfig.clockY * height
+                binding.clockDragHint.alpha = 1f
+                return true
+            }
+            MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> {
+                currentConfig.clockX = ((event.x - dragOffsetX) / width).coerceIn(0.05f, 0.95f)
+                currentConfig.clockY = ((event.y - dragOffsetY) / height).coerceIn(0.08f, 0.92f)
+                updateClockDragHandle()
+                requestRender()
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    binding.clockDragHint.alpha = 0.78f
+                    saveConfig()
+                    notifyService()
+                }
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun updateClockDragHandle() {
+        binding.clockDragHint.post {
+            val parentWidth = binding.previewContainer.width
+            val parentHeight = binding.previewContainer.height
+            val handleWidth = binding.clockDragHint.width
+            val handleHeight = binding.clockDragHint.height
+            if (parentWidth <= 0 || parentHeight <= 0 || handleWidth <= 0 || handleHeight <= 0) {
+                return@post
+            }
+
+            binding.clockDragHint.x = currentConfig.clockX * parentWidth - handleWidth / 2f
+            binding.clockDragHint.y = currentConfig.clockY * parentHeight - handleHeight / 2f
+            binding.clockDragHint.alpha = 0.78f
+            binding.clockDragHint.bringToFront()
+        }
     }
 
     private fun updateTimeBitmap(text: String) {
-        previewTextPaint.textSize = currentConfig.fontSize * 0.5f // Scale for preview
+        val scale = previewScaleToWallpaper()
+        previewTextPaint.textSize = currentConfig.fontSize * scale
         previewTextPaint.color = currentConfig.fontColor
         previewTextPaint.typeface = Typeface.DEFAULT_BOLD
         
         if (currentConfig.fontThickness > 0) {
             previewTextPaint.style = Paint.Style.FILL_AND_STROKE
-            previewTextPaint.strokeWidth = currentConfig.fontThickness * 0.5f
+            previewTextPaint.strokeWidth = currentConfig.fontThickness * scale
         } else {
             previewTextPaint.style = Paint.Style.FILL
         }
@@ -270,8 +342,9 @@ class MainActivity : AppCompatActivity() {
         val bounds = Rect()
         previewTextPaint.getTextBounds(text, 0, text.length, bounds)
         
-        val width = bounds.width() + 20
-        val height = bounds.height() + 20
+        val padding = (40f * scale).toInt().coerceAtLeast(8)
+        val width = bounds.width() + padding
+        val height = bounds.height() + padding
         
         if (previewTimeBitmap == null || previewTimeBitmap!!.width != width || previewTimeBitmap!!.height != height) {
             previewTimeBitmap?.recycle()
@@ -283,10 +356,44 @@ class MainActivity : AppCompatActivity() {
         canvas.drawText(text, width / 2f, height / 2f - (previewTextPaint.descent() + previewTextPaint.ascent()) / 2f, previewTextPaint)
     }
 
+    private fun previewScaleToWallpaper(): Float {
+        val metrics = wallpaperTargetMetrics()
+        val previewW = binding.surfacePreview.width.takeIf { it > 0 } ?: binding.previewContainer.width
+        val previewH = binding.surfacePreview.height.takeIf { it > 0 } ?: binding.previewContainer.height
+        if (previewW <= 0 || previewH <= 0 || metrics.widthPixels <= 0 || metrics.heightPixels <= 0) {
+            return 0.5f
+        }
+        return min(
+            previewW.toFloat() / metrics.widthPixels.toFloat(),
+            previewH.toFloat() / metrics.heightPixels.toFloat()
+        )
+    }
+
+    private fun wallpaperTargetMetrics(): DisplayMetrics {
+        return DisplayMetrics().also { metrics ->
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(metrics)
+        }
+    }
+
     private fun initUi() {
-        binding.sliderX.value = currentConfig.clockX
-        binding.sliderY.value = currentConfig.clockY
-        binding.sliderSize.value = currentConfig.fontSize
+        val pipelineAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            ExtractionMode.values().map { it.displayName }
+        ).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        binding.spinnerPipeline.adapter = pipelineAdapter
+        binding.spinnerPipeline.setSelection(activeExtractionMode.ordinal)
+        binding.spinnerPipeline.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                setActiveExtractionMode(ExtractionMode.values()[position])
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+
         binding.sliderThickness.value = currentConfig.fontThickness
         binding.sliderThreshold.value = 0.1f
         binding.sliderDeepLabClass.value = currentConfig.deepLabTargetClassIndex.toFloat()
@@ -297,10 +404,14 @@ class MainActivity : AppCompatActivity() {
         binding.sliderSaliencyCleanup.value = currentConfig.saliencyCleanupRadius.toFloat()
         binding.sliderSaliencyEdgeLock.value = currentConfig.saliencyEdgeLock
         updateSaliencyMatteSliderLabels()
+        setActiveExtractionMode(activeExtractionMode)
 
-        binding.sliderX.addOnChangeListener { _, value, _ -> currentConfig.clockX = value; saveConfig(); notifyService(); requestRender() }
-        binding.sliderY.addOnChangeListener { _, value, _ -> currentConfig.clockY = value; saveConfig(); notifyService(); requestRender() }
-        binding.sliderSize.addOnChangeListener { _, value, _ -> currentConfig.fontSize = value; saveConfig(); notifyService(); requestRender() }
+        binding.btnClockSmaller.setOnClickListener {
+            resizeClock(1f / CLOCK_RESIZE_STEP)
+        }
+        binding.btnClockLarger.setOnClickListener {
+            resizeClock(CLOCK_RESIZE_STEP)
+        }
         binding.sliderThickness.addOnChangeListener { _, value, _ -> currentConfig.fontThickness = value; saveConfig(); notifyService(); requestRender() }
         binding.sliderDeepLabClass.addOnChangeListener { _, value, _ ->
             currentConfig.deepLabTargetClassIndex = value.toInt()
@@ -366,14 +477,43 @@ class MainActivity : AppCompatActivity() {
         updateStatus()
     }
 
+    private fun resizeClock(multiplier: Float) {
+        currentConfig.fontSize = (currentConfig.fontSize * multiplier).coerceIn(MIN_CLOCK_SIZE, MAX_CLOCK_SIZE)
+        saveConfig()
+        notifyService()
+        requestRender()
+    }
+
+    private fun setActiveExtractionMode(mode: ExtractionMode) {
+        activeExtractionMode = mode
+        val showDeepLab = mode == ExtractionMode.DEEPLAB_V3_MOBILENET_V2 ||
+            mode == ExtractionMode.HYBRID_DEPTH ||
+            mode == ExtractionMode.SALIENCY_MATTE
+        val showSaliency = mode == ExtractionMode.SALIENCY_MATTE
+        val showEdge = mode == ExtractionMode.EDGE || mode == ExtractionMode.HYBRID_DEPTH
+        val showParameters = showDeepLab || showSaliency || showEdge
+
+        binding.parameterCard.visibility = if (showParameters) View.VISIBLE else View.GONE
+        setViewsVisible(showDeepLab, binding.tvDeepLabSettings, binding.tvLabelDeepLabClass, binding.sliderDeepLabClass, binding.tvLabelDeepLabConfidence, binding.sliderDeepLabConfidence)
+        setViewsVisible(showSaliency, binding.tvSaliencySettings, binding.tvLabelSaliencyThreshold, binding.sliderSaliencyThreshold, binding.tvLabelSaliencyFeather, binding.sliderSaliencyFeather, binding.tvLabelSaliencyCleanup, binding.sliderSaliencyCleanup, binding.tvLabelSaliencyEdgeLock, binding.sliderSaliencyEdgeLock)
+        setViewsVisible(showEdge, binding.tvLabelThreshold, binding.sliderThreshold)
+    }
+
+    private fun setViewsVisible(visible: Boolean, vararg views: View) {
+        val visibility = if (visible) View.VISIBLE else View.GONE
+        views.forEach { it.visibility = visibility }
+    }
+
     private fun notifyService() {
         sendBroadcast(Intent("com.thusvill.advancewallpapermanager.UPDATE_CONFIG"))
     }
 
     private fun processSelectedImage(uri: Uri, mode: ExtractionMode) {
+        clearPreviewForNewImage()
         binding.pbExtraction.visibility = View.VISIBLE
         binding.pbExtraction.isIndeterminate = true
         setExtractionButtonsEnabled(false)
+        binding.btnInitialSelectImage.text = "Processing..."
         binding.tvStatus.text = "Status: ${mode.statusLabel}..."
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -453,12 +593,14 @@ class MainActivity : AppCompatActivity() {
                     
                     withContext(Dispatchers.Main) {
                         updatePreviewBitmaps()
+                        updateEditorVisibility()
                         requestRender()
                         updateStatus()
                         saveConfig()
                         notifyService()
                         binding.pbExtraction.visibility = View.GONE
                         setExtractionButtonsEnabled(true)
+                        binding.btnInitialSelectImage.text = "Select Image"
                         Toast.makeText(this@MainActivity, "Depth Mask Extracted (${mode.toastLabel})!", Toast.LENGTH_SHORT).show()
                     }
                 } else {
@@ -470,10 +612,41 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     binding.pbExtraction.visibility = View.GONE
                     setExtractionButtonsEnabled(true)
+                    binding.btnInitialSelectImage.text = "Select Image"
                     Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    updateEditorVisibility()
                     updateStatus()
                 }
             }
+        }
+    }
+
+    private fun clearPreviewForNewImage() {
+        currentConfig.baseImagePath = ""
+        currentConfig.foregroundMaskPath = ""
+        previewBaseBitmap?.recycle()
+        previewMaskBitmap?.recycle()
+        previewTimeBitmap?.recycle()
+        previewBaseBitmap = null
+        previewMaskBitmap = null
+        previewTimeBitmap = null
+        clearPreviewSurface()
+        updateEditorVisibility()
+        updateStatus()
+    }
+
+    private fun clearPreviewSurface() {
+        val holder = binding.surfacePreview.holder
+        if (!holder.surface.isValid) return
+
+        try {
+            val canvas = holder.lockCanvas() ?: return
+            try {
+                canvas.drawColor(Color.BLACK)
+            } finally {
+                holder.unlockCanvasAndPost(canvas)
+            }
+        } catch (e: Exception) {
         }
     }
 
@@ -516,12 +689,27 @@ class MainActivity : AppCompatActivity() {
         binding.tvStatus.text = "Base: ${if (hasBase) "OK" else "None"}, Mask: ${if (hasMask) "OK" else "None"}"
     }
 
+    private fun updateEditorVisibility() {
+        val hasBase = currentConfig.baseImagePath.isNotEmpty() && File(currentConfig.baseImagePath).exists()
+        binding.initialSelectCard.visibility = if (hasBase) View.GONE else View.VISIBLE
+        binding.previewCard.visibility = if (hasBase) View.VISIBLE else View.GONE
+        binding.controlsScroll.visibility = if (hasBase) View.VISIBLE else View.GONE
+        binding.btnSelectImage.text = if (hasBase) "Reselect Image" else "Select Image"
+        binding.tvSubtitle.text = if (hasBase) {
+            "Preview stays visible. Drag the clock directly on it."
+        } else {
+            "Select an image to open the lock screen editor."
+        }
+        if (hasBase) {
+            syncPreviewAspectRatio()
+            updateClockDragHandle()
+        }
+    }
+
     private fun setExtractionButtonsEnabled(enabled: Boolean) {
+        binding.btnInitialSelectImage.isEnabled = enabled
         binding.btnSelectImage.isEnabled = enabled
-        binding.btnDeepLab.isEnabled = enabled
-        binding.btnExtractEdges.isEnabled = enabled
-        binding.btnHybridDepth.isEnabled = enabled
-        binding.btnSaliencyMatte.isEnabled = enabled
+        binding.spinnerPipeline.isEnabled = enabled
     }
 
     private fun getSelfieSegmenter(): TfliteSelfieSegmenter {
@@ -716,20 +904,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private enum class ExtractionMode(
+        val displayName: String,
         val statusLabel: String,
         val toastLabel: String
     ) {
-        SELFIE_AI("Selfie AI Extraction", "Selfie AI"),
-        DEEPLAB_V3_MOBILENET_V2("DeepLabV3 MobileNetV2 Extraction", "DeepLabV3 MobileNetV2"),
-        EDGE("Edge Detection", "Edge"),
-        HYBRID_DEPTH("Hybrid Depth Extraction", "Hybrid Depth"),
-        SALIENCY_MATTE("Saliency Matte Extraction", "Saliency Matte")
+        SELFIE_AI("Selfie AI", "Selfie AI Extraction", "Selfie AI"),
+        DEEPLAB_V3_MOBILENET_V2("DeepLabV3 MobileNetV2", "DeepLabV3 MobileNetV2 Extraction", "DeepLabV3 MobileNetV2"),
+        EDGE("Math Edge", "Edge Detection", "Edge"),
+        HYBRID_DEPTH("Hybrid Depth", "Hybrid Depth Extraction", "Hybrid Depth"),
+        SALIENCY_MATTE("Saliency Matte", "Saliency Matte Extraction", "Saliency Matte")
     }
 
     private companion object {
         const val DEEPLAB_PREVIEW_DEBOUNCE_MS = 350L
         const val SALIENCY_PREVIEW_DEBOUNCE_MS = 450L
         const val HYBRID_FEATHER_RADIUS = 8
+        const val PREVIEW_SCREEN_HEIGHT_FRACTION = 0.5f
+        const val CLOCK_RESIZE_STEP = 1.08f
+        const val MIN_CLOCK_SIZE = 40f
+        const val MAX_CLOCK_SIZE = 1000f
 
         val DEEPLAB_CLASS_NAMES = listOf(
             "Background",
