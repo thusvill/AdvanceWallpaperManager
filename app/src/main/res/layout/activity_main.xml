@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/tv_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Advanced Depth Clock Manager"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="16dp"/>
+
+        <Button
+            android:id="@+id/btn_select_image"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Step 1a: Select Photo (AI Depth)"
+            app:layout_constraintTop_toBottomOf="@id/tv_title"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="24dp"/>
+
+        <Button
+            android:id="@+id/btn_extract_edges"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Step 1b: Select Photo (Math Edge)"
+            app:layout_constraintTop_toBottomOf="@id/btn_select_image"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="8dp"/>
+
+        <ProgressBar
+            android:id="@+id/pb_extraction"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:indeterminate="true"
+            app:layout_constraintTop_toBottomOf="@id/btn_extract_edges"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/tv_clock_settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Step 2: Clock Customization"
+            android:textStyle="bold"
+            app:layout_constraintTop_toBottomOf="@id/pb_extraction"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="24dp"/>
+
+        <!-- Clock X -->
+        <TextView
+            android:id="@+id/tv_label_x"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Horizontal Position"
+            app:layout_constraintTop_toBottomOf="@id/tv_clock_settings"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="16dp"/>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_x"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.0"
+            android:valueTo="1.0"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_x"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <!-- Clock Y -->
+        <TextView
+            android:id="@+id/tv_label_y"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Vertical Position"
+            app:layout_constraintTop_toBottomOf="@id/slider_x"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_y"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.0"
+            android:valueTo="1.0"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_y"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <!-- Size -->
+        <TextView
+            android:id="@+id/tv_label_size"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Font Size"
+            app:layout_constraintTop_toBottomOf="@id/slider_y"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_size"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="50"
+            android:valueTo="500"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_size"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <!-- Thickness -->
+        <TextView
+            android:id="@+id/tv_label_thickness"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Font Thickness"
+            app:layout_constraintTop_toBottomOf="@id/slider_size"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="8dp"/>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_thickness"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:valueFrom="0"
+            android:valueTo="20"
+            app:layout_constraintTop_toBottomOf="@id/tv_label_thickness"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <Button
+            android:id="@+id/btn_apply"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Step 3: Set Live Wallpaper"
+            app:layout_constraintTop_toBottomOf="@id/slider_thickness"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="24dp"/>
+
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Status: Waiting for images..."
+            app:layout_constraintTop_toBottomOf="@id/btn_apply"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="16dp"
+            android:paddingBottom="32dp"/>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.core.widget.NestedScrollView>
