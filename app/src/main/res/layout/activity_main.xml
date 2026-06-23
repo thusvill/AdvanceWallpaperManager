@@ -428,10 +428,77 @@
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/toggle_clock_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:checkedButton="@+id/btn_mode_horizontal"
+                    app:singleSelection="true">
+
+                    <Button
+                        android:id="@+id/btn_mode_horizontal"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Horizontal"
+                        android:textAllCaps="false" />
+
+                    <Button
+                        android:id="@+id/btn_mode_vertical"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Vertical"
+                        android:textAllCaps="false" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
+                    android:layout_marginTop="14dp"
+                    android:text="Color"
+                    android:textColor="#D9FFFFFF"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_auto_color"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:text="Auto"
+                        android:textAllCaps="false" />
+
+                    <Space
+                        android:layout_width="12dp"
+                        android:layout_height="1dp" />
+
+                    <HorizontalScrollView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="3">
+
+                        <LinearLayout
+                            android:id="@+id/color_palette"
+                            android:layout_width="wrap_content"
+                            android:layout_height="48dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal" />
+                    </HorizontalScrollView>
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
                     android:text="Position by dragging on the preview. Resize with these buttons."
                     android:textColor="#BFFFFFFF" />
 

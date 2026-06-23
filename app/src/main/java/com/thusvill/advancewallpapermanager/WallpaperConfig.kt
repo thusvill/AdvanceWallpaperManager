@@ -10,6 +10,7 @@ data class WallpaperConfig(
     var fontColor: Int = 0xFFFFFFFF.toInt(),
     var fontThickness: Float = 0f, // 0 means FILL, >0 means STROKE/BOLD
     var clockHeightScale: Float = 1.0f, // iOS-style vertical stretch
+    var clockMode: ClockMode = ClockMode.HORIZONTAL,
     var deepLabTargetClassIndex: Int = 15,
     var deepLabMinConfidence: Float = 0f,
     var saliencyThreshold: Float = 0.35f,
@@ -20,3 +21,8 @@ data class WallpaperConfig(
     var accuracyLevel: Float = 1.0f, // 0.5 = low accuracy (faster), 1.0 = balanced, 1.5 = high accuracy (slower)
     var isEnabled: Boolean = true
 )
+
+enum class ClockMode {
+    HORIZONTAL,
+    VERTICAL
+}

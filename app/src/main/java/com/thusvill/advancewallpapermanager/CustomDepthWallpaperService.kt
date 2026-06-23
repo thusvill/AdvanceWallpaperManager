@@ -106,8 +106,10 @@ class CustomDepthWallpaperService : WallpaperService() {
                 clockY = prefs.getFloat("clockY", 0.4f),
                 fontSize = prefs.getFloat("fontSize", 200f),
                 fontThickness = prefs.getFloat("fontThickness", 0f),
-                clockHeightScale = prefs.getFloat("clockHeightScale", 1.0f)
+                clockHeightScale = prefs.getFloat("clockHeightScale", 1.0f),
+                clockMode = ClockMode.valueOf(prefs.getString("clockMode", ClockMode.HORIZONTAL.name) ?: ClockMode.HORIZONTAL.name)
             )
+            config.fontColor = prefs.getInt("fontColor", Color.WHITE)
             
             currentConfig = config
             recycleBitmaps()
@@ -211,11 +213,8 @@ class CustomDepthWallpaperService : WallpaperService() {
 //            canvas.restore()
 //        }
 private fun updateTimeBitmap(text: String, config: WallpaperConfig) {
-
     val scaledTextSize = config.fontSize * config.clockHeightScale
     textPaint.textSize = scaledTextSize
-
-
     textPaint.color = config.fontColor
     textPaint.typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
 
@@ -228,14 +227,25 @@ private fun updateTimeBitmap(text: String, config: WallpaperConfig) {
 
     textPaint.textScaleX = 0.85f
 
+    val finalLines = if (config.clockMode == ClockMode.VERTICAL) {
+        text.replace(":", "\n").split("\n")
+    } else {
+        listOf(text)
+    }
 
-    val bounds = Rect()
-    textPaint.getTextBounds(text, 0, text.length, bounds)
+    val fm = textPaint.fontMetrics
+    val lineHeight = fm.descent - fm.ascent
+    var maxWidth = 0f
+    for (line in finalLines) {
+        maxWidth = maxOf(maxWidth, textPaint.measureText(line))
+    }
 
-    val padding = 40
-    val width = bounds.width() + padding
-    val height = bounds.height() + padding
+    val spacing = if (finalLines.size > 1) 20f * config.clockHeightScale else 0f
+    val totalHeight = (lineHeight * finalLines.size) + spacing
 
+    val padding = 60
+    val width = (maxWidth + padding).toInt()
+    val height = (totalHeight + padding).toInt()
 
     if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
         timeBitmap?.recycle()
@@ -245,10 +255,17 @@ private fun updateTimeBitmap(text: String, config: WallpaperConfig) {
     timeBitmap?.eraseColor(Color.TRANSPARENT)
     val canvas = Canvas(timeBitmap!!)
 
-    val x = width / 2f
-    val y = height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
-
-    canvas.drawText(text, x, y, textPaint)
+    var currentY = padding / 2f
+    for (i in finalLines.indices) {
+        val line = finalLines[i]
+        val x = width / 2f
+        val y = currentY - fm.ascent
+        canvas.drawText(line, x, y, textPaint)
+        currentY += lineHeight
+        if (finalLines.size > 1 && i == 0) {
+            currentY += spacing
+        }
+    }
 }
     }
 

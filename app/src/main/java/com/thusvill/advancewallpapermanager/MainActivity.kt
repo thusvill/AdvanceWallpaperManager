@@ -19,8 +19,10 @@ import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.View
+import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -336,10 +338,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateTimeBitmap(text: String) {
         val scale = previewScaleToWallpaper()
-        previewTextPaint.textSize = currentConfig.fontSize * scale
+        val scaledTextSize = currentConfig.fontSize * currentConfig.clockHeightScale * scale
+        previewTextPaint.textSize = scaledTextSize
         previewTextPaint.color = currentConfig.fontColor
-        previewTextPaint.typeface = Typeface.DEFAULT_BOLD
-        
+        previewTextPaint.typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
+
         if (currentConfig.fontThickness > 0) {
             previewTextPaint.style = Paint.Style.FILL_AND_STROKE
             previewTextPaint.strokeWidth = currentConfig.fontThickness * scale
@@ -347,26 +350,47 @@ class MainActivity : AppCompatActivity() {
             previewTextPaint.style = Paint.Style.FILL
         }
 
-        val bounds = Rect()
-        previewTextPaint.getTextBounds(text, 0, text.length, bounds)
-        
-        val padding = (40f * scale).toInt().coerceAtLeast(8)
-        val width = bounds.width() + padding
-        val height = (bounds.height() * currentConfig.clockHeightScale + padding).toInt()
-        
+        previewTextPaint.textScaleX = 0.85f
+
+        val finalLines = if (currentConfig.clockMode == ClockMode.VERTICAL) {
+            text.replace(":", "\n").split("\n")
+        } else {
+            listOf(text)
+        }
+
+        val fm = previewTextPaint.fontMetrics
+        val lineHeight = fm.descent - fm.ascent
+        var maxWidth = 0f
+        for (line in finalLines) {
+            maxWidth = maxOf(maxWidth, previewTextPaint.measureText(line))
+        }
+
+        val spacing = if (finalLines.size > 1) 20f * currentConfig.clockHeightScale * scale else 0f
+        val totalHeight = (lineHeight * finalLines.size) + spacing
+
+        val padding = (60f * scale).toInt().coerceAtLeast(8)
+        val width = (maxWidth + padding).toInt()
+        val height = (totalHeight + padding).toInt()
+
         if (previewTimeBitmap == null || previewTimeBitmap!!.width != width || previewTimeBitmap!!.height != height) {
             previewTimeBitmap?.recycle()
             previewTimeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         }
-        
+
         previewTimeBitmap?.eraseColor(Color.TRANSPARENT)
         val canvas = Canvas(previewTimeBitmap!!)
-        
-        // Apply vertical stretch
-        canvas.save()
-        canvas.scale(1.0f, currentConfig.clockHeightScale, width / 2f, height / 2f)
-        canvas.drawText(text, width / 2f, height / 2f - (previewTextPaint.descent() + previewTextPaint.ascent()) / 2f, previewTextPaint)
-        canvas.restore()
+
+        var currentY = padding / 2f
+        for (i in finalLines.indices) {
+            val line = finalLines[i]
+            val x = width / 2f
+            val y = currentY - fm.ascent
+            canvas.drawText(line, x, y, previewTextPaint)
+            currentY += lineHeight
+            if (finalLines.size > 1 && i == 0) {
+                currentY += spacing
+            }
+        }
     }
 
     private fun previewScaleToWallpaper(): Float {
@@ -425,7 +449,29 @@ class MainActivity : AppCompatActivity() {
 
         binding.sliderStretch.value = currentConfig.clockHeightScale
         updateStretchSliderLabel()
+
+        if (currentConfig.clockMode == ClockMode.VERTICAL) {
+            binding.toggleClockMode.check(R.id.btn_mode_vertical)
+        } else {
+            binding.toggleClockMode.check(R.id.btn_mode_horizontal)
+        }
+
+        initColorPalette()
+
         setActiveExtractionMode(activeExtractionMode)
+
+        binding.toggleClockMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                currentConfig.clockMode = if (checkedId == R.id.btn_mode_vertical) ClockMode.VERTICAL else ClockMode.HORIZONTAL
+                saveConfig()
+                notifyService()
+                requestRender()
+            }
+        }
+
+        binding.btnAutoColor.setOnClickListener {
+            autoDetectColor()
+        }
 
         binding.btnClockSmaller.setOnClickListener {
             resizeClock(1f / CLOCK_RESIZE_STEP)
@@ -536,6 +582,67 @@ class MainActivity : AppCompatActivity() {
         }
         
         updateStatus()
+    }
+
+    private fun autoDetectColor() {
+        val bitmap = previewBaseBitmap ?: return
+        
+        // Sampling multiple points around the clock area for better accuracy
+        val x = (currentConfig.clockX * bitmap.width).toInt().coerceIn(0, bitmap.width - 1)
+        val y = (currentConfig.clockY * bitmap.height).toInt().coerceIn(0, bitmap.height - 1)
+        
+        val color = bitmap.getPixel(x, y)
+        
+        // Convert to HSL to find a contrasting color or a prominent one
+        val hsl = FloatArray(3)
+        androidx.core.graphics.ColorUtils.colorToHSL(color, hsl)
+        
+        // Logic: if background is dark, use light version of the color; if light, use dark.
+        // Also boost saturation for a better look
+        hsl[1] = (hsl[1] + 0.3f).coerceAtMost(1.0f)
+        if (hsl[2] < 0.5f) {
+            hsl[2] = 0.85f // Lighten
+        } else {
+            hsl[2] = 0.15f // Darken
+        }
+        
+        currentConfig.fontColor = androidx.core.graphics.ColorUtils.HSLToColor(hsl)
+        saveConfig()
+        notifyService()
+        requestRender()
+    }
+
+    private fun initColorPalette() {
+        val colors = listOf(
+            Color.WHITE, Color.BLACK, 
+            Color.parseColor("#FF3B30"), // iOS Red
+            Color.parseColor("#FF9500"), // iOS Orange
+            Color.parseColor("#FFCC00"), // iOS Yellow
+            Color.parseColor("#4CD964"), // iOS Green
+            Color.parseColor("#5AC8FA"), // iOS Light Blue
+            Color.parseColor("#007AFF"), // iOS Blue
+            Color.parseColor("#5856D6"), // iOS Purple
+            Color.parseColor("#FF2D55")  // iOS Pink
+        )
+        
+        binding.colorPalette.removeAllViews()
+        for (color in colors) {
+            val view = View(this).apply {
+                val size = (48 * resources.displayMetrics.density).toInt()
+                val margin = (4 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                    setMargins(margin, 0, margin, 0)
+                }
+                setBackgroundColor(color)
+                setOnClickListener {
+                    currentConfig.fontColor = color
+                    saveConfig()
+                    notifyService()
+                    requestRender()
+                }
+            }
+            binding.colorPalette.addView(view)
+        }
     }
 
     private fun updateAccuracySliderLabel() {
@@ -930,6 +1037,7 @@ class MainActivity : AppCompatActivity() {
             putFloat("clockX", currentConfig.clockX)
             putFloat("clockY", currentConfig.clockY)
             putFloat("fontSize", currentConfig.fontSize)
+            putInt("fontColor", currentConfig.fontColor)
             putFloat("fontThickness", currentConfig.fontThickness)
             putInt("deepLabTargetClassIndex", currentConfig.deepLabTargetClassIndex)
             putFloat("deepLabMinConfidence", currentConfig.deepLabMinConfidence)
@@ -939,6 +1047,7 @@ class MainActivity : AppCompatActivity() {
             putFloat("saliencyEdgeLock", currentConfig.saliencyEdgeLock)
             putInt("mlKitFeatherRadius", currentConfig.mlKitFeatherRadius)
             putFloat("clockHeightScale", currentConfig.clockHeightScale)
+            putString("clockMode", currentConfig.clockMode.name)
             putFloat("accuracyLevel", currentConfig.accuracyLevel)
             apply()
         }
@@ -950,6 +1059,7 @@ class MainActivity : AppCompatActivity() {
         currentConfig.clockX = prefs.getFloat("clockX", 0.5f)
         currentConfig.clockY = prefs.getFloat("clockY", 0.4f)
         currentConfig.fontSize = prefs.getFloat("fontSize", 200f)
+        currentConfig.fontColor = prefs.getInt("fontColor", Color.WHITE)
         currentConfig.fontThickness = prefs.getFloat("fontThickness", 0f)
         currentConfig.deepLabTargetClassIndex = prefs.getInt("deepLabTargetClassIndex", 15)
         currentConfig.deepLabMinConfidence = prefs.getFloat("deepLabMinConfidence", 0f)
@@ -963,6 +1073,7 @@ class MainActivity : AppCompatActivity() {
         currentConfig.saliencyEdgeLock = (kotlin.math.round(rawEdgeLock * 10) / 10).coerceIn(0.0f, 1.0f)
         currentConfig.mlKitFeatherRadius = prefs.getInt("mlKitFeatherRadius", 10)
         currentConfig.clockHeightScale = prefs.getFloat("clockHeightScale", 1.0f)
+        currentConfig.clockMode = ClockMode.valueOf(prefs.getString("clockMode", ClockMode.HORIZONTAL.name) ?: ClockMode.HORIZONTAL.name)
         // Quantize accuracy level to match slider step size (0.1)
         val rawAccuracy = prefs.getFloat("accuracyLevel", 1.0f)
         currentConfig.accuracyLevel = (kotlin.math.round(rawAccuracy * 10) / 10).coerceIn(0.5f, 1.5f)
