@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.*
 import android.service.wallpaper.WallpaperService
+import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import androidx.core.content.ContextCompat
@@ -86,15 +87,24 @@ class CustomDepthWallpaperService : WallpaperService() {
 
         private fun loadConfigFromPrefs() {
             if (surfaceWidth == 0 || surfaceHeight == 0) return
-            
+
             val prefs = getSharedPreferences("wallpaper_prefs", Context.MODE_PRIVATE)
+            val path = prefs.getString("basePath", "") ?: ""
+            Log.d("DepthEngine", "Loading from: $path")
+
+            val file = File(path)
+            if (!file.exists()) {
+                Log.e("DepthEngine", "File does not exist at $path!")
+                return
+            }
             val config = WallpaperConfig(
                 baseImagePath = prefs.getString("basePath", "") ?: "",
                 foregroundMaskPath = prefs.getString("maskPath", "") ?: "",
                 clockX = prefs.getFloat("clockX", 0.5f),
                 clockY = prefs.getFloat("clockY", 0.4f),
                 fontSize = prefs.getFloat("fontSize", 200f),
-                fontThickness = prefs.getFloat("fontThickness", 0f)
+                fontThickness = prefs.getFloat("fontThickness", 0f),
+                clockHeightScale = prefs.getFloat("clockHeightScale", 1.0f)
             )
             
             currentConfig = config
@@ -145,6 +155,11 @@ class CustomDepthWallpaperService : WallpaperService() {
             val surface = surfaceHolder.surface
             if (surface != null && surface.isValid) {
                 val config = currentConfig ?: return
+
+                if (baseBitmap == null) {
+                    Log.e("DepthEngine", "Base bitmap is null, cannot render.")
+                    return
+                }
                 val timeText = timeFormat.format(Date())
                 
                 updateTimeBitmap(timeText, config)
@@ -177,7 +192,7 @@ class CustomDepthWallpaperService : WallpaperService() {
             textPaint.getTextBounds(text, 0, text.length, bounds)
             
             val width = bounds.width() + 40
-            val height = bounds.height() + 40
+            val height = (bounds.height() * config.clockHeightScale + 40).toInt()
             
             if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
                 timeBitmap?.recycle()
@@ -186,7 +201,12 @@ class CustomDepthWallpaperService : WallpaperService() {
             
             timeBitmap?.eraseColor(Color.TRANSPARENT)
             val canvas = Canvas(timeBitmap!!)
+            
+            // Apply vertical stretch
+            canvas.save()
+            canvas.scale(1.0f, config.clockHeightScale, width / 2f, height / 2f)
             canvas.drawText(text, width / 2f, height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f, textPaint)
+            canvas.restore()
         }
     }
 

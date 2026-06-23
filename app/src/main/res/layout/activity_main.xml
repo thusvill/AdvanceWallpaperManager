@@ -227,6 +227,24 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/tv_label_accuracy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Detection Accuracy: High"
+                    android:textColor="#D9FFFFFF"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_accuracy"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="0.1"
+                    android:value="1.0"
+                    android:valueFrom="0.5"
+                    android:valueTo="1.5" />
+
+                <TextView
                     android:id="@+id/tv_label_deep_lab_class"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -432,6 +450,22 @@
                     android:layout_height="wrap_content"
                     android:valueFrom="0"
                     android:valueTo="20" />
+
+                <TextView
+                    android:id="@+id/tv_label_stretch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Vertical Stretch (iOS Style): 1.0x"
+                    android:textColor="#D9FFFFFF" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_stretch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:value="1.0"
+                    android:valueFrom="0.5"
+                    android:valueTo="3.0" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

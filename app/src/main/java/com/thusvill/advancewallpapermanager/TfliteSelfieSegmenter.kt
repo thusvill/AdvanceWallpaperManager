@@ -5,6 +5,16 @@ import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
+import com.google.mlkit.vision.segmentation.subject.SubjectSegmenter
+import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallClient
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
+
+
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
@@ -12,12 +22,15 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.exp
 
+
 class TfliteSelfieSegmenter(
+
     private val context: Context,
     private val config: Config = Config.selfie()
 ) {
 
     private var interpreter: Interpreter? = null
+    private var mlKitSegmenter: SubjectSegmenter? = null
     private val TAG = "TfliteSelfieSegmenter"
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -27,19 +40,91 @@ class TfliteSelfieSegmenter(
     fun initialize(onComplete: (Boolean) -> Unit) {
         Thread {
             try {
-                ensureInterpreter()
-                Log.i(TAG, "Interpreter initialized from bundled asset.")
+                if (config.pipeline == Pipeline.MLKIT_SUBJECT) {
+                    val options = SubjectSegmenterOptions.Builder()
+                        .enableForegroundConfidenceMask()
+                        .build()
+                    mlKitSegmenter = SubjectSegmentation.getClient(options)
+                    isInitialized = true
+                    Log.i(TAG, "ML Kit Subject Segmenter initialized.")
+                } else {
+                    ensureInterpreter()
+                    Log.i(TAG, "Interpreter initialized from bundled asset.")
+                }
                 mainHandler.post { onComplete(true) }
             } catch (e: Exception) {
-                Log.e(TAG, "TFLite init failed: ${e.localizedMessage}", e)
+                Log.e(TAG, "Initialization failed: ${e.localizedMessage}", e)
                 mainHandler.post { onComplete(false) }
             }
         }.start()
     }
+    private fun ensureMlKitInitialized() {
+        val moduleInstallClient: ModuleInstallClient = ModuleInstall.getClient(context)
+        val api = SubjectSegmentation.getClient(SubjectSegmenterOptions.Builder().build())
+
+        val request = ModuleInstallRequest.newBuilder()
+            .addApi(api)
+            .build()
+
+        moduleInstallClient.areModulesAvailable(api)
+            .addOnSuccessListener { response ->
+                if (!response.areModulesAvailable()) {
+                    moduleInstallClient.installModules(request)
+                        .addOnSuccessListener {
+                            Log.d("TfliteSelfie", "Module installed successfully")
+                        }
+                        .addOnFailureListener { e ->
+                            Log.e("TfliteSelfie", "Module install failed", e)
+                        }
+                }
+            }
+    }
 
     fun segment(bitmap: Bitmap): SegmentationMask? {
-        var resizedBitmap: Bitmap? = null
+        if (!isInitialized) {
+            if (config.pipeline == Pipeline.MLKIT_SUBJECT) {
+                val options = SubjectSegmenterOptions.Builder()
+                    .enableForegroundConfidenceMask()
+                    .build()
+                mlKitSegmenter = SubjectSegmentation.getClient(options)
+                isInitialized = true
+            } else {
+                ensureInterpreter()
+            }
+        }
         return try {
+            if (config.pipeline == Pipeline.MLKIT_SUBJECT) {
+                segmentWithMlKit(bitmap)
+            } else {
+                segmentWithTfLite(bitmap)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Inference crashed: ${e.localizedMessage}", e)
+            null
+        }
+    }
+
+
+    private fun segmentWithMlKit(bitmap: Bitmap): SegmentationMask? {
+        val segmenter = mlKitSegmenter ?: throw IllegalStateException("ML Kit Segmenter not initialized")
+        val image = InputImage.fromBitmap(bitmap, 0)
+        val result = Tasks.await(segmenter.process(image))
+        val floatBuffer = result.foregroundConfidenceMask ?: return null
+
+        val maskWidth = bitmap.width
+        val maskHeight = bitmap.height
+
+        val byteBuffer = ByteBuffer.allocateDirect(floatBuffer.capacity() * 4).order(ByteOrder.nativeOrder())
+        floatBuffer.rewind()
+        byteBuffer.asFloatBuffer().put(floatBuffer)
+        byteBuffer.rewind()
+
+        return SegmentationMask(byteBuffer, maskWidth, maskHeight)
+    }
+
+    private fun segmentWithTfLite(bitmap: Bitmap): SegmentationMask? {
+        var resizedBitmap: Bitmap? = null
+        try {
             val currentInterpreter = ensureInterpreter()
             val inputTensor = currentInterpreter.getInputTensor(0)
             val inputShape = inputTensor.shape()
@@ -54,10 +139,7 @@ class TfliteSelfieSegmenter(
 
             currentInterpreter.run(inputBuffer, rawOutputBuffer)
 
-            toMask(rawOutputBuffer, outputTensor.shape(), outputTensor.dataType())
-        } catch (e: Exception) {
-            Log.e(TAG, "Inference loop crashed: ${e.localizedMessage}", e)
-            null
+            return toMask(rawOutputBuffer, outputTensor.shape(), outputTensor.dataType())
         } finally {
             if (resizedBitmap !== null && resizedBitmap !== bitmap) {
                 resizedBitmap.recycle()
@@ -68,6 +150,8 @@ class TfliteSelfieSegmenter(
     fun close() {
         interpreter?.close()
         interpreter = null
+        mlKitSegmenter?.close()
+        mlKitSegmenter = null
         isInitialized = false
     }
 
@@ -250,15 +334,17 @@ class TfliteSelfieSegmenter(
     )
 
     data class Config(
-        val modelPath: String,
-        val inputMean: Float,
-        val inputStd: Float,
-        val outputMode: OutputMode,
+        val pipeline: Pipeline = Pipeline.TFLITE,
+        val modelPath: String = "",
+        val inputMean: Float = 0f,
+        val inputStd: Float = 255f,
+        val outputMode: OutputMode = OutputMode.SINGLE_CHANNEL,
         val targetClassIndex: Int = 15,
         val minConfidence: Float = 0f
     ) {
         companion object {
             fun selfie() = Config(
+                pipeline = Pipeline.TFLITE,
                 modelPath = "selfie_segmenter.tflite",
                 inputMean = 0f,
                 inputStd = 255f,
@@ -269,6 +355,7 @@ class TfliteSelfieSegmenter(
                 targetClassIndex: Int = 15,
                 minConfidence: Float = 0f
             ) = Config(
+                pipeline = Pipeline.TFLITE,
                 modelPath = "deeplabv3_mobilenetv2.tflite",
                 inputMean = 127.5f,
                 inputStd = 127.5f,
@@ -278,13 +365,23 @@ class TfliteSelfieSegmenter(
             )
 
             fun deepLabV3MobileNetV2Confidence(targetClassIndex: Int = 15) = Config(
+                pipeline = Pipeline.TFLITE,
                 modelPath = "deeplabv3_mobilenetv2.tflite",
                 inputMean = 127.5f,
                 inputStd = 127.5f,
                 outputMode = OutputMode.TARGET_CLASS_CONFIDENCE,
                 targetClassIndex = targetClassIndex
             )
+
+            fun mlKitSubject() = Config(
+                pipeline = Pipeline.MLKIT_SUBJECT
+            )
         }
+    }
+
+    enum class Pipeline {
+        TFLITE,
+        MLKIT_SUBJECT
     }
 
     enum class OutputMode {

@@ -16,5 +16,6 @@ data class WallpaperConfig(
     var saliencyFeatherRadius: Int = 10,
     var saliencyCleanupRadius: Int = 2,
     var saliencyEdgeLock: Float = 0.5f,
+    var accuracyLevel: Float = 1.0f, // 0.5 = low accuracy (faster), 1.0 = balanced, 1.5 = high accuracy (slower)
     var isEnabled: Boolean = true
 )

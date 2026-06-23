@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private var deepLabSegmenter: TfliteSelfieSegmenter? = null
     private var deepLabPreviewJob: Job? = null
     private var saliencyMattePreviewJob: Job? = null
+    private var isApplyingAccuracyMultiplier: Boolean = false  // Flag to prevent recursive updates
 
     private var previewBaseBitmap: Bitmap? = null
     private var previewMaskBitmap: Bitmap? = null
@@ -344,7 +345,7 @@ class MainActivity : AppCompatActivity() {
         
         val padding = (40f * scale).toInt().coerceAtLeast(8)
         val width = bounds.width() + padding
-        val height = bounds.height() + padding
+        val height = (bounds.height() * currentConfig.clockHeightScale + padding).toInt()
         
         if (previewTimeBitmap == null || previewTimeBitmap!!.width != width || previewTimeBitmap!!.height != height) {
             previewTimeBitmap?.recycle()
@@ -353,7 +354,12 @@ class MainActivity : AppCompatActivity() {
         
         previewTimeBitmap?.eraseColor(Color.TRANSPARENT)
         val canvas = Canvas(previewTimeBitmap!!)
+        
+        // Apply vertical stretch
+        canvas.save()
+        canvas.scale(1.0f, currentConfig.clockHeightScale, width / 2f, height / 2f)
         canvas.drawText(text, width / 2f, height / 2f - (previewTextPaint.descent() + previewTextPaint.ascent()) / 2f, previewTextPaint)
+        canvas.restore()
     }
 
     private fun previewScaleToWallpaper(): Float {
@@ -399,11 +405,15 @@ class MainActivity : AppCompatActivity() {
         binding.sliderDeepLabClass.value = currentConfig.deepLabTargetClassIndex.toFloat()
         binding.sliderDeepLabConfidence.value = currentConfig.deepLabMinConfidence
         updateDeepLabSliderLabels()
+        binding.sliderAccuracy.value = currentConfig.accuracyLevel
+        updateAccuracySliderLabel()
         binding.sliderSaliencyThreshold.value = currentConfig.saliencyThreshold
         binding.sliderSaliencyFeather.value = currentConfig.saliencyFeatherRadius.toFloat()
         binding.sliderSaliencyCleanup.value = currentConfig.saliencyCleanupRadius.toFloat()
         binding.sliderSaliencyEdgeLock.value = currentConfig.saliencyEdgeLock
         updateSaliencyMatteSliderLabels()
+        binding.sliderStretch.value = currentConfig.clockHeightScale
+        updateStretchSliderLabel()
         setActiveExtractionMode(activeExtractionMode)
 
         binding.btnClockSmaller.setOnClickListener {
@@ -426,28 +436,52 @@ class MainActivity : AppCompatActivity() {
             scheduleDeepLabPreviewUpdate()
         }
         binding.sliderSaliencyThreshold.addOnChangeListener { _, value, _ ->
-            currentConfig.saliencyThreshold = value
-            updateSaliencyMatteSliderLabels()
-            saveConfig()
-            scheduleSaliencyMattePreviewUpdate()
+            if (!isApplyingAccuracyMultiplier) {
+                currentConfig.saliencyThreshold = value
+                updateSaliencyMatteSliderLabels()
+                saveConfig()
+                scheduleSaliencyMattePreviewUpdate()
+            }
         }
         binding.sliderSaliencyFeather.addOnChangeListener { _, value, _ ->
-            currentConfig.saliencyFeatherRadius = value.toInt()
-            updateSaliencyMatteSliderLabels()
-            saveConfig()
-            scheduleSaliencyMattePreviewUpdate()
+            if (!isApplyingAccuracyMultiplier) {
+                currentConfig.saliencyFeatherRadius = value.toInt()
+                updateSaliencyMatteSliderLabels()
+                saveConfig()
+                scheduleSaliencyMattePreviewUpdate()
+            }
         }
         binding.sliderSaliencyCleanup.addOnChangeListener { _, value, _ ->
-            currentConfig.saliencyCleanupRadius = value.toInt()
-            updateSaliencyMatteSliderLabels()
-            saveConfig()
-            scheduleSaliencyMattePreviewUpdate()
+            if (!isApplyingAccuracyMultiplier) {
+                currentConfig.saliencyCleanupRadius = value.toInt()
+                updateSaliencyMatteSliderLabels()
+                saveConfig()
+                scheduleSaliencyMattePreviewUpdate()
+            }
         }
         binding.sliderSaliencyEdgeLock.addOnChangeListener { _, value, _ ->
-            currentConfig.saliencyEdgeLock = value
-            updateSaliencyMatteSliderLabels()
+            if (!isApplyingAccuracyMultiplier) {
+                currentConfig.saliencyEdgeLock = value
+                updateSaliencyMatteSliderLabels()
+                saveConfig()
+                scheduleSaliencyMattePreviewUpdate()
+            }
+        }
+
+        binding.sliderStretch.addOnChangeListener { _, value, _ ->
+            currentConfig.clockHeightScale = value
+            updateStretchSliderLabel()
             saveConfig()
-            scheduleSaliencyMattePreviewUpdate()
+            notifyService()
+            requestRender()
+        }
+        
+        binding.sliderStretch.addOnChangeListener { _, value, _ ->
+            currentConfig.clockHeightScale = value
+            updateStretchSliderLabel()
+            saveConfig()
+            notifyService()
+            requestRender()
         }
         
         binding.sliderThreshold.addOnChangeListener { _, value, _ ->
@@ -473,8 +507,77 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {}
             }
         }
+
+        binding.sliderAccuracy.addOnChangeListener { _, value, _ ->
+            currentConfig.accuracyLevel = value
+            updateAccuracySliderLabel()
+            saveConfig()
+            // Apply accuracy multiplier to all parameters
+            applyAccuracyMultiplier()
+            scheduleAccuracyPreviewUpdate()
+        }
         
         updateStatus()
+    }
+
+    private fun updateAccuracySliderLabel() {
+        val accuracyText = when {
+            currentConfig.accuracyLevel < 0.75f -> "Low (Faster)"
+            currentConfig.accuracyLevel < 1.15f -> "High"
+            else -> "Ultra High (Slower)"
+        }
+        binding.tvLabelAccuracy.text = "Detection Accuracy: $accuracyText (${String.format("%.1f", currentConfig.accuracyLevel)}×)"
+    }
+
+    private fun applyAccuracyMultiplier() {
+        isApplyingAccuracyMultiplier = true
+        try {
+            val factor = currentConfig.accuracyLevel
+            // Adjust saliency threshold based on accuracy
+            // Lower accuracy = higher threshold (fewer detections, faster)
+            // Higher accuracy = lower threshold (more detections, slower)
+            val baseThreshold = 0.35f
+            val rawThreshold = (baseThreshold / factor).coerceIn(0.05f, 0.95f)
+            // Quantize to stepSize 0.01: round to nearest 0.01
+            currentConfig.saliencyThreshold = (kotlin.math.round(rawThreshold * 100) / 100).coerceIn(0.05f, 0.95f)
+            
+            // Adjust feather radius based on accuracy
+            val baseFeather = 10
+            currentConfig.saliencyFeatherRadius = (baseFeather * factor).toInt().coerceIn(1, 32)
+            
+            // Adjust cleanup radius based on accuracy
+            val baseCleanup = 2
+            currentConfig.saliencyCleanupRadius = (baseCleanup * factor).toInt().coerceIn(0, 8)
+            
+            // Slightly adjust edge lock for better accuracy
+            val baseEdgeLock = 0.5f
+            val rawEdgeLock = (baseEdgeLock * factor).coerceIn(0.0f, 1.0f)
+            // Quantize to stepSize 0.1: round to nearest 0.1
+            currentConfig.saliencyEdgeLock = (kotlin.math.round(rawEdgeLock * 10) / 10).coerceIn(0.0f, 1.0f)
+            
+            // Update all visible sliders to reflect the new values
+            binding.sliderSaliencyThreshold.value = currentConfig.saliencyThreshold
+            binding.sliderSaliencyFeather.value = currentConfig.saliencyFeatherRadius.toFloat()
+            binding.sliderSaliencyCleanup.value = currentConfig.saliencyCleanupRadius.toFloat()
+            binding.sliderSaliencyEdgeLock.value = currentConfig.saliencyEdgeLock
+            
+            updateSaliencyMatteSliderLabels()
+        } finally {
+            isApplyingAccuracyMultiplier = false
+        }
+    }
+
+    private fun scheduleAccuracyPreviewUpdate() {
+        lifecycleScope.launch(Dispatchers.Default) {
+            delay(300)  // Debounce: wait 300ms after slider stops
+            withContext(Dispatchers.Main) {
+                when (activeExtractionMode) {
+                    ExtractionMode.SALIENCY_MATTE -> scheduleSaliencyMattePreviewUpdate()
+                    ExtractionMode.HYBRID_DEPTH -> scheduleDeepLabPreviewUpdate()
+                    else -> {}
+                }
+            }
+        }
     }
 
     private fun resizeClock(multiplier: Float) {
@@ -486,14 +589,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun setActiveExtractionMode(mode: ExtractionMode) {
         activeExtractionMode = mode
+        val isMlKit = mode == ExtractionMode.MLKIT_SUBJECT
         val showDeepLab = mode == ExtractionMode.DEEPLAB_V3_MOBILENET_V2 ||
-            mode == ExtractionMode.HYBRID_DEPTH ||
-            mode == ExtractionMode.SALIENCY_MATTE
+                mode == ExtractionMode.HYBRID_DEPTH ||
+                mode == ExtractionMode.SALIENCY_MATTE
         val showSaliency = mode == ExtractionMode.SALIENCY_MATTE
         val showEdge = mode == ExtractionMode.EDGE || mode == ExtractionMode.HYBRID_DEPTH
+
+
         val showParameters = showDeepLab || showSaliency || showEdge
 
+
         binding.parameterCard.visibility = if (showParameters) View.VISIBLE else View.GONE
+        // Always show accuracy slider when parameters are visible
+
+        setViewsVisible(showParameters, binding.tvLabelAccuracy, binding.sliderAccuracy)
         setViewsVisible(showDeepLab, binding.tvDeepLabSettings, binding.tvLabelDeepLabClass, binding.sliderDeepLabClass, binding.tvLabelDeepLabConfidence, binding.sliderDeepLabConfidence)
         setViewsVisible(showSaliency, binding.tvSaliencySettings, binding.tvLabelSaliencyThreshold, binding.sliderSaliencyThreshold, binding.tvLabelSaliencyFeather, binding.sliderSaliencyFeather, binding.tvLabelSaliencyCleanup, binding.sliderSaliencyCleanup, binding.tvLabelSaliencyEdgeLock, binding.sliderSaliencyEdgeLock)
         setViewsVisible(showEdge, binding.tvLabelThreshold, binding.sliderThreshold)
@@ -505,10 +615,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun notifyService() {
-        sendBroadcast(Intent("com.thusvill.advancewallpapermanager.UPDATE_CONFIG"))
+        val intent = Intent("com.thusvill.advancewallpapermanager.UPDATE_CONFIG")
+
+        intent.setPackage(packageName)
+        sendBroadcast(intent)
     }
 
     private fun processSelectedImage(uri: Uri, mode: ExtractionMode) {
+
         clearPreviewForNewImage()
         binding.pbExtraction.visibility = View.VISIBLE
         binding.pbExtraction.isIndeterminate = true
@@ -570,6 +684,33 @@ class MainActivity : AppCompatActivity() {
                             binding.sliderThreshold.value,
                             HYBRID_FEATHER_RADIUS
                         )
+                    }
+                    ExtractionMode.MLKIT_SUBJECT -> {
+
+                        val segmenter = TfliteSelfieSegmenter(
+                            this@MainActivity,
+                            TfliteSelfieSegmenter.Config.mlKitSubject()
+                        )
+                        try {
+                            val mask = segmenter.segment(bitmap) ?: throw Exception("Failed")
+
+                        } catch (e: Exception) {
+                            if (e.message?.contains("Waiting for") == true) {
+                                withContext(Dispatchers.Main) {
+                                    binding.tvStatus.text = "Status: Downloading AI model... please wait."
+
+                                    delay(5000)
+                                    processSelectedImage(uri, mode)
+                                }
+                            }
+                        }
+
+                        val mask = try {
+                            segmenter.segment(bitmap) ?: throw Exception("ML Kit segmentation failed")
+                        } finally {
+                            segmenter.close()
+                        }
+                        success = extractMaskNative(bitmap, mask.buffer, mask.width, mask.height, maskBitmap)
                     }
                     ExtractionMode.SALIENCY_MATTE -> {
                         val mask = runSaliencyMatteSegmenter(bitmap)
@@ -664,6 +805,8 @@ class MainActivity : AppCompatActivity() {
             putInt("saliencyFeatherRadius", currentConfig.saliencyFeatherRadius)
             putInt("saliencyCleanupRadius", currentConfig.saliencyCleanupRadius)
             putFloat("saliencyEdgeLock", currentConfig.saliencyEdgeLock)
+            putFloat("clockHeightScale", currentConfig.clockHeightScale)
+            putFloat("accuracyLevel", currentConfig.accuracyLevel)
             apply()
         }
     }
@@ -677,10 +820,18 @@ class MainActivity : AppCompatActivity() {
         currentConfig.fontThickness = prefs.getFloat("fontThickness", 0f)
         currentConfig.deepLabTargetClassIndex = prefs.getInt("deepLabTargetClassIndex", 15)
         currentConfig.deepLabMinConfidence = prefs.getFloat("deepLabMinConfidence", 0f)
-        currentConfig.saliencyThreshold = prefs.getFloat("saliencyThreshold", 0.35f)
+        // Quantize saliency threshold to match slider step size (0.01) and valueFrom (0.05)
+        val rawThreshold = prefs.getFloat("saliencyThreshold", 0.35f)
+        currentConfig.saliencyThreshold = (kotlin.math.round(rawThreshold * 100) / 100).coerceIn(0.05f, 0.95f)
         currentConfig.saliencyFeatherRadius = prefs.getInt("saliencyFeatherRadius", 10)
         currentConfig.saliencyCleanupRadius = prefs.getInt("saliencyCleanupRadius", 2)
-        currentConfig.saliencyEdgeLock = prefs.getFloat("saliencyEdgeLock", 0.5f)
+        // Quantize edge lock to match slider step size (0.1)
+        val rawEdgeLock = prefs.getFloat("saliencyEdgeLock", 0.5f)
+        currentConfig.saliencyEdgeLock = (kotlin.math.round(rawEdgeLock * 10) / 10).coerceIn(0.0f, 1.0f)
+        currentConfig.clockHeightScale = prefs.getFloat("clockHeightScale", 1.0f)
+        // Quantize accuracy level to match slider step size (0.1)
+        val rawAccuracy = prefs.getFloat("accuracyLevel", 1.0f)
+        currentConfig.accuracyLevel = (kotlin.math.round(rawAccuracy * 10) / 10).coerceIn(0.5f, 1.5f)
     }
 
     private fun updateStatus() {
@@ -894,6 +1045,10 @@ class MainActivity : AppCompatActivity() {
         binding.tvLabelSaliencyCleanup.text = "Mask Cleanup: ${currentConfig.saliencyCleanupRadius}px"
         binding.tvLabelSaliencyEdgeLock.text = "Edge Lock: ${String.format(Locale.US, "%.2f", currentConfig.saliencyEdgeLock)}"
     }
+
+    private fun updateStretchSliderLabel() {
+        binding.tvLabelStretch.text = "Vertical Stretch (iOS Style): ${String.format(Locale.US, "%.1fx", currentConfig.clockHeightScale)}"
+    }
     
     override fun onDestroy() {
         super.onDestroy()
@@ -912,7 +1067,8 @@ class MainActivity : AppCompatActivity() {
         DEEPLAB_V3_MOBILENET_V2("DeepLabV3 MobileNetV2", "DeepLabV3 MobileNetV2 Extraction", "DeepLabV3 MobileNetV2"),
         EDGE("Math Edge", "Edge Detection", "Edge"),
         HYBRID_DEPTH("Hybrid Depth", "Hybrid Depth Extraction", "Hybrid Depth"),
-        SALIENCY_MATTE("Saliency Matte", "Saliency Matte Extraction", "Saliency Matte")
+        SALIENCY_MATTE("Saliency Matte", "Saliency Matte Extraction", "Saliency Matte"),
+        MLKIT_SUBJECT("ML Kit Subject", "ML Kit Extraction", "ML Kit")
     }
 
     private companion object {
