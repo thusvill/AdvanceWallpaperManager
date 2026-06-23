@@ -66,7 +66,6 @@ class MainActivity : AppCompatActivity() {
     private val previewTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
     }
-    private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     private var dragOffsetX = 0f
     private var dragOffsetY = 0f
 
@@ -276,12 +275,11 @@ class MainActivity : AppCompatActivity() {
         val surface = binding.surfacePreview.holder.surface
         if (surface == null || !surface.isValid) return
         
-        val timeText = timeFormat.format(Date())
-        updateTimeBitmap(timeText)
+        updateTimeBitmap()
         
         renderNativeFrame(
             surface,
-            timeText,
+            "", // Not used anymore
             previewBaseBitmap,
             previewMaskBitmap,
             previewTimeBitmap,
@@ -336,12 +334,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateTimeBitmap(text: String) {
+    private fun updateTimeBitmap() {
+        val format = if (currentConfig.use24HourFormat) "HH:mm" else "h:mm"
+        val currentTime = SimpleDateFormat(format, Locale.getDefault()).format(Date())
+        
         val scale = previewScaleToWallpaper()
-        val scaledTextSize = currentConfig.fontSize * currentConfig.clockHeightScale * scale
+        val scaledTextSize = currentConfig.fontSize * scale
         previewTextPaint.textSize = scaledTextSize
         previewTextPaint.color = currentConfig.fontColor
-        previewTextPaint.typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
+        previewTextPaint.typeface = Typeface.create(currentConfig.fontFamily, Typeface.BOLD)
+        previewTextPaint.letterSpacing = currentConfig.letterSpacing
+        previewTextPaint.isAntiAlias = true
+        previewTextPaint.isSubpixelText = true
 
         if (currentConfig.fontThickness > 0) {
             previewTextPaint.style = Paint.Style.FILL_AND_STROKE
@@ -352,43 +356,92 @@ class MainActivity : AppCompatActivity() {
 
         previewTextPaint.textScaleX = 0.85f
 
-        val finalLines = if (currentConfig.clockMode == ClockMode.VERTICAL) {
-            text.replace(":", "\n").split("\n")
-        } else {
-            listOf(text)
-        }
-
         val fm = previewTextPaint.fontMetrics
-        val lineHeight = fm.descent - fm.ascent
-        var maxWidth = 0f
-        for (line in finalLines) {
-            maxWidth = maxOf(maxWidth, previewTextPaint.measureText(line))
-        }
+        val lineHeight = (fm.descent - fm.ascent)
 
-        val spacing = if (finalLines.size > 1) 20f * currentConfig.clockHeightScale * scale else 0f
-        val totalHeight = (lineHeight * finalLines.size) + spacing
+        if (currentConfig.clockMode == ClockMode.HORIZONTAL) {
+            val colonIdx = currentTime.indexOf(":")
+            val hourPart = currentTime.substring(0, colonIdx)
+            val minutePart = currentTime.substring(colonIdx + 1)
 
-        val padding = (60f * scale).toInt().coerceAtLeast(8)
-        val width = (maxWidth + padding).toInt()
-        val height = (totalHeight + padding).toInt()
+            val hourW = previewTextPaint.measureText(hourPart)
+            val colonW = previewTextPaint.measureText(":")
+            val minuteW = previewTextPaint.measureText(minutePart)
 
-        if (previewTimeBitmap == null || previewTimeBitmap!!.width != width || previewTimeBitmap!!.height != height) {
-            previewTimeBitmap?.recycle()
-            previewTimeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        }
+            val totalW = hourW + colonW + minuteW
+            val totalH = lineHeight * currentConfig.clockHeightScale
 
-        previewTimeBitmap?.eraseColor(Color.TRANSPARENT)
-        val canvas = Canvas(previewTimeBitmap!!)
+            val padding = (30f * scale).toInt().coerceAtLeast(8)
+            val width = (totalW + padding).toInt()
+            val height = (totalH + padding).toInt()
 
-        var currentY = padding / 2f
-        for (i in finalLines.indices) {
-            val line = finalLines[i]
-            val x = width / 2f
-            val y = currentY - fm.ascent
-            canvas.drawText(line, x, y, previewTextPaint)
-            currentY += lineHeight
-            if (finalLines.size > 1 && i == 0) {
-                currentY += spacing
+            if (previewTimeBitmap == null || previewTimeBitmap!!.width != width || previewTimeBitmap!!.height != height) {
+                previewTimeBitmap?.recycle()
+                previewTimeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            }
+
+            previewTimeBitmap?.eraseColor(Color.TRANSPARENT)
+            val canvas = Canvas(previewTimeBitmap!!)
+
+            val startX = padding / 2f
+            val centerY = height / 2f
+            
+            // Draw hour (stretched)
+            canvas.save()
+            canvas.translate(startX, centerY)
+            canvas.scale(1.0f, currentConfig.clockHeightScale)
+            canvas.drawText(hourPart, hourW / 2f, -(fm.ascent + fm.descent) / 2f, previewTextPaint)
+            canvas.restore()
+
+            // Draw colon (not stretched)
+            canvas.drawText(":", startX + hourW + colonW / 2f, centerY - (fm.ascent + fm.descent) / 2f, previewTextPaint)
+
+            // Draw minute (stretched)
+            canvas.save()
+            canvas.translate(startX + hourW + colonW, centerY)
+            canvas.scale(1.0f, currentConfig.clockHeightScale)
+            canvas.drawText(minutePart, minuteW / 2f, -(fm.ascent + fm.descent) / 2f, previewTextPaint)
+            canvas.restore()
+
+        } else {
+            // VERTICAL MODE
+            val finalLines = currentTime.split(":")
+            val baseSpacing = 20f * scale
+            val extraSpacing = currentConfig.lineSpacing * scale
+            val spacing = if (finalLines.size > 1) (baseSpacing + extraSpacing) * currentConfig.clockHeightScale else 0f
+            
+            val stretchedLineHeight = lineHeight * currentConfig.clockHeightScale
+            var maxWidth = 0f
+            for (line in finalLines) {
+                maxWidth = maxOf(maxWidth, previewTextPaint.measureText(line))
+            }
+
+            val totalHeight = (stretchedLineHeight * finalLines.size) + spacing
+            val padding = (30f * scale).toInt().coerceAtLeast(8)
+            val width = (maxWidth + padding).toInt()
+            val height = (totalHeight + padding).toInt()
+
+            if (previewTimeBitmap == null || previewTimeBitmap!!.width != width || previewTimeBitmap!!.height != height) {
+                previewTimeBitmap?.recycle()
+                previewTimeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            }
+
+            previewTimeBitmap?.eraseColor(Color.TRANSPARENT)
+            val canvas = Canvas(previewTimeBitmap!!)
+
+            var currentY = padding / 2f
+            for (i in finalLines.indices) {
+                val line = finalLines[i]
+                canvas.save()
+                canvas.translate(width / 2f, currentY + stretchedLineHeight / 2f)
+                canvas.scale(1.0f, currentConfig.clockHeightScale)
+                canvas.drawText(line, 0f, -(fm.ascent + fm.descent) / 2f, previewTextPaint)
+                canvas.restore()
+                
+                currentY += stretchedLineHeight
+                if (finalLines.size > 1 && i == 0) {
+                    currentY += spacing
+                }
             }
         }
     }
@@ -450,10 +503,52 @@ class MainActivity : AppCompatActivity() {
         binding.sliderStretch.value = currentConfig.clockHeightScale
         updateStretchSliderLabel()
 
+        val fonts = listOf("sans-serif", "sans-serif-condensed", "sans-serif-light", "sans-serif-medium", "serif", "monospace", "cursive")
+        val fontAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, fonts).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        binding.spinnerFont.adapter = fontAdapter
+        binding.spinnerFont.setSelection(fonts.indexOf(currentConfig.fontFamily).coerceAtLeast(0))
+        binding.spinnerFont.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                currentConfig.fontFamily = fonts[position]
+                saveConfig()
+                notifyService()
+                requestRender()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        binding.sliderLetterSpacing.value = currentConfig.letterSpacing
+        binding.tvLabelLetterSpacing.text = "Letter Spacing: ${String.format("%.2f", currentConfig.letterSpacing)}"
+        binding.sliderLetterSpacing.addOnChangeListener { _, value, _ ->
+            currentConfig.letterSpacing = value
+            binding.tvLabelLetterSpacing.text = "Letter Spacing: ${String.format("%.2f", value)}"
+            saveConfig()
+            notifyService()
+            requestRender()
+        }
+
+        binding.sliderLineSpacing.value = currentConfig.lineSpacing
+        binding.tvLabelLineSpacing.text = "Line Spacing: ${currentConfig.lineSpacing.toInt()}px"
+        binding.sliderLineSpacing.addOnChangeListener { _, value, _ ->
+            currentConfig.lineSpacing = value
+            binding.tvLabelLineSpacing.text = "Line Spacing: ${value.toInt()}px"
+            saveConfig()
+            notifyService()
+            requestRender()
+        }
+
         if (currentConfig.clockMode == ClockMode.VERTICAL) {
             binding.toggleClockMode.check(R.id.btn_mode_vertical)
         } else {
             binding.toggleClockMode.check(R.id.btn_mode_horizontal)
+        }
+
+        if (currentConfig.use24HourFormat) {
+            binding.toggleTimeFormat.check(R.id.btn_format_24h)
+        } else {
+            binding.toggleTimeFormat.check(R.id.btn_format_12h)
         }
 
         initColorPalette()
@@ -463,6 +558,15 @@ class MainActivity : AppCompatActivity() {
         binding.toggleClockMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (isChecked) {
                 currentConfig.clockMode = if (checkedId == R.id.btn_mode_vertical) ClockMode.VERTICAL else ClockMode.HORIZONTAL
+                saveConfig()
+                notifyService()
+                requestRender()
+            }
+        }
+
+        binding.toggleTimeFormat.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                currentConfig.use24HourFormat = checkedId == R.id.btn_format_24h
                 saveConfig()
                 notifyService()
                 requestRender()
@@ -820,6 +924,8 @@ class MainActivity : AppCompatActivity() {
         setViewsVisible(showSaliency, binding.tvSaliencySettings, binding.tvLabelSaliencyThreshold, binding.sliderSaliencyThreshold, binding.tvLabelSaliencyFeather, binding.sliderSaliencyFeather, binding.tvLabelSaliencyCleanup, binding.sliderSaliencyCleanup, binding.tvLabelSaliencyEdgeLock, binding.sliderSaliencyEdgeLock)
         setViewsVisible(showEdge, binding.tvLabelThreshold, binding.sliderThreshold)
 
+        saveConfig() // Save the new mode
+
         // Trigger update if we have an image
         if (lastSelectedUri != null) {
             scheduleMaskRecalculation()
@@ -1049,6 +1155,11 @@ class MainActivity : AppCompatActivity() {
             putFloat("clockHeightScale", currentConfig.clockHeightScale)
             putString("clockMode", currentConfig.clockMode.name)
             putFloat("accuracyLevel", currentConfig.accuracyLevel)
+            putString("fontFamily", currentConfig.fontFamily)
+            putFloat("letterSpacing", currentConfig.letterSpacing)
+            putFloat("lineSpacing", currentConfig.lineSpacing)
+            putBoolean("use24HourFormat", currentConfig.use24HourFormat)
+            putString("activeExtractionMode", activeExtractionMode.name)
             apply()
         }
     }
@@ -1077,6 +1188,20 @@ class MainActivity : AppCompatActivity() {
         // Quantize accuracy level to match slider step size (0.1)
         val rawAccuracy = prefs.getFloat("accuracyLevel", 1.0f)
         currentConfig.accuracyLevel = (kotlin.math.round(rawAccuracy * 10) / 10).coerceIn(0.5f, 1.5f)
+        currentConfig.fontFamily = prefs.getString("fontFamily", "sans-serif-condensed") ?: "sans-serif-condensed"
+        currentConfig.letterSpacing = prefs.getFloat("letterSpacing", 0f)
+        currentConfig.lineSpacing = prefs.getFloat("lineSpacing", 0f)
+        currentConfig.use24HourFormat = prefs.getBoolean("use24HourFormat", true)
+
+        val modeName = prefs.getString("activeExtractionMode", ExtractionMode.SELFIE_AI.name)
+        activeExtractionMode = ExtractionMode.valueOf(modeName ?: ExtractionMode.SELFIE_AI.name)
+
+        if (currentConfig.baseImagePath.isNotEmpty()) {
+            val file = File(currentConfig.baseImagePath)
+            if (file.exists()) {
+                lastSelectedUri = Uri.fromFile(file)
+            }
+        }
     }
 
     private fun updateStatus() {

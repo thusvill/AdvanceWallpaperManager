@@ -455,6 +455,50 @@
                         android:textAllCaps="false" />
                 </com.google.android.material.button.MaterialButtonToggleGroup>
 
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/toggle_time_format"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:checkedButton="@+id/btn_format_24h"
+                    app:singleSelection="true">
+
+                    <Button
+                        android:id="@+id/btn_format_12h"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="12h"
+                        android:textAllCaps="false" />
+
+                    <Button
+                        android:id="@+id/btn_format_24h"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="24h"
+                        android:textAllCaps="false" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Font Family"
+                    android:textColor="#D9FFFFFF"
+                    android:textStyle="bold" />
+
+                <Spinner
+                    android:id="@+id/spinner_font"
+                    android:layout_width="match_parent"
+                    android:layout_height="50dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_spinner"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp" />
+
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -559,6 +603,40 @@
                     android:value="1.0"
                     android:valueFrom="0.5"
                     android:valueTo="3.0" />
+
+                <TextView
+                    android:id="@+id/tv_label_letter_spacing"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Letter Spacing: 0.0"
+                    android:textColor="#D9FFFFFF" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_letter_spacing"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="0.01"
+                    android:value="0.0"
+                    android:valueFrom="-0.1"
+                    android:valueTo="0.5" />
+
+                <TextView
+                    android:id="@+id/tv_label_line_spacing"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Line Spacing: 0px"
+                    android:textColor="#D9FFFFFF" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_line_spacing"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="1"
+                    android:value="0"
+                    android:valueFrom="-400"
+                    android:valueTo="400" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

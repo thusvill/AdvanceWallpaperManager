@@ -24,7 +24,6 @@ class CustomDepthWallpaperService : WallpaperService() {
         private var isVisible = false
         private var surfaceWidth = 0
         private var surfaceHeight = 0
-        private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
         private var currentConfig: WallpaperConfig? = null
         
         private var baseBitmap: Bitmap? = null
@@ -107,7 +106,11 @@ class CustomDepthWallpaperService : WallpaperService() {
                 fontSize = prefs.getFloat("fontSize", 200f),
                 fontThickness = prefs.getFloat("fontThickness", 0f),
                 clockHeightScale = prefs.getFloat("clockHeightScale", 1.0f),
-                clockMode = ClockMode.valueOf(prefs.getString("clockMode", ClockMode.HORIZONTAL.name) ?: ClockMode.HORIZONTAL.name)
+                clockMode = ClockMode.valueOf(prefs.getString("clockMode", ClockMode.HORIZONTAL.name) ?: ClockMode.HORIZONTAL.name),
+                fontFamily = prefs.getString("fontFamily", "sans-serif-condensed") ?: "sans-serif-condensed",
+                letterSpacing = prefs.getFloat("letterSpacing", 0f),
+                lineSpacing = prefs.getFloat("lineSpacing", 0f),
+                use24HourFormat = prefs.getBoolean("use24HourFormat", true)
             )
             config.fontColor = prefs.getInt("fontColor", Color.WHITE)
             
@@ -164,13 +167,12 @@ class CustomDepthWallpaperService : WallpaperService() {
                     Log.e("DepthEngine", "Base bitmap is null, cannot render.")
                     return
                 }
-                val timeText = timeFormat.format(Date())
                 
-                updateTimeBitmap(timeText, config)
+                updateTimeBitmap(config)
                 
                 renderNativeFrame(
                     surface, 
-                    timeText, 
+                    "", 
                     baseBitmap, 
                     maskBitmap, 
                     timeBitmap,
@@ -180,93 +182,116 @@ class CustomDepthWallpaperService : WallpaperService() {
             }
         }
 
-//        private fun updateTimeBitmap(text: String, config: WallpaperConfig) {
-//            textPaint.textSize = config.fontSize
-//            textPaint.color = config.fontColor
-//            textPaint.typeface = Typeface.DEFAULT_BOLD
-//
-//            if (config.fontThickness > 0) {
-//                textPaint.style = Paint.Style.FILL_AND_STROKE
-//                textPaint.strokeWidth = config.fontThickness
-//            } else {
-//                textPaint.style = Paint.Style.FILL
-//            }
-//
-//            val bounds = Rect()
-//            textPaint.getTextBounds(text, 0, text.length, bounds)
-//
-//            val width = bounds.width() + 40
-//            val height = (bounds.height() * config.clockHeightScale + 40).toInt()
-//
-//            if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
-//                timeBitmap?.recycle()
-//                timeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-//            }
-//
-//            timeBitmap?.eraseColor(Color.TRANSPARENT)
-//            val canvas = Canvas(timeBitmap!!)
-//
-//            // Apply vertical stretch
-//            canvas.save()
-//            canvas.scale(1.0f, config.clockHeightScale, width / 2f, height / 2f)
-//            canvas.drawText(text, width / 2f, height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f, textPaint)
-//            canvas.restore()
-//        }
-private fun updateTimeBitmap(text: String, config: WallpaperConfig) {
-    val scaledTextSize = config.fontSize * config.clockHeightScale
-    textPaint.textSize = scaledTextSize
-    textPaint.color = config.fontColor
-    textPaint.typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
+        private fun updateTimeBitmap(config: WallpaperConfig) {
+            val format = if (config.use24HourFormat) "HH:mm" else "h:mm"
+            val currentTime = SimpleDateFormat(format, Locale.getDefault()).format(Date())
 
-    if (config.fontThickness > 0) {
-        textPaint.style = Paint.Style.FILL_AND_STROKE
-        textPaint.strokeWidth = config.fontThickness
-    } else {
-        textPaint.style = Paint.Style.FILL
-    }
+            val scaledTextSize = config.fontSize
+            textPaint.textSize = scaledTextSize
+            textPaint.color = config.fontColor
+            textPaint.typeface = Typeface.create(config.fontFamily, Typeface.BOLD)
+            textPaint.letterSpacing = config.letterSpacing
+            textPaint.isAntiAlias = true
+            textPaint.isSubpixelText = true
 
-    textPaint.textScaleX = 0.85f
+            if (config.fontThickness > 0) {
+                textPaint.style = Paint.Style.FILL_AND_STROKE
+                textPaint.strokeWidth = config.fontThickness
+            } else {
+                textPaint.style = Paint.Style.FILL
+            }
 
-    val finalLines = if (config.clockMode == ClockMode.VERTICAL) {
-        text.replace(":", "\n").split("\n")
-    } else {
-        listOf(text)
-    }
+            textPaint.textScaleX = 0.85f
 
-    val fm = textPaint.fontMetrics
-    val lineHeight = fm.descent - fm.ascent
-    var maxWidth = 0f
-    for (line in finalLines) {
-        maxWidth = maxOf(maxWidth, textPaint.measureText(line))
-    }
+            val fm = textPaint.fontMetrics
+            val lineHeight = (fm.descent - fm.ascent)
 
-    val spacing = if (finalLines.size > 1) 20f * config.clockHeightScale else 0f
-    val totalHeight = (lineHeight * finalLines.size) + spacing
+            if (config.clockMode == ClockMode.HORIZONTAL) {
+                val colonIdx = currentTime.indexOf(":")
+                val hourPart = currentTime.substring(0, colonIdx)
+                val minutePart = currentTime.substring(colonIdx + 1)
 
-    val padding = 60
-    val width = (maxWidth + padding).toInt()
-    val height = (totalHeight + padding).toInt()
+                val hourW = textPaint.measureText(hourPart)
+                val colonW = textPaint.measureText(":")
+                val minuteW = textPaint.measureText(minutePart)
 
-    if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
-        timeBitmap?.recycle()
-        timeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    }
+                val totalW = hourW + colonW + minuteW
+                val totalH = lineHeight * config.clockHeightScale
 
-    timeBitmap?.eraseColor(Color.TRANSPARENT)
-    val canvas = Canvas(timeBitmap!!)
+                val padding = 60
+                val width = (totalW + padding).toInt()
+                val height = (totalH + padding).toInt()
 
-    var currentY = padding / 2f
-    for (i in finalLines.indices) {
-        val line = finalLines[i]
-        val x = width / 2f
-        val y = currentY - fm.ascent
-        canvas.drawText(line, x, y, textPaint)
-        currentY += lineHeight
-        if (finalLines.size > 1 && i == 0) {
-            currentY += spacing
+                if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
+                    timeBitmap?.recycle()
+                    timeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                }
+
+                timeBitmap?.eraseColor(Color.TRANSPARENT)
+                val canvas = Canvas(timeBitmap!!)
+
+                val startX = padding / 2f
+                val centerY = height / 2f
+                
+                // Draw hour (stretched)
+                canvas.save()
+                canvas.translate(startX, centerY)
+                canvas.scale(1.0f, config.clockHeightScale)
+                canvas.drawText(hourPart, hourW / 2f, -(fm.ascent + fm.descent) / 2f, textPaint)
+                canvas.restore()
+
+                // Draw colon (not stretched)
+                canvas.drawText(":", startX + hourW + colonW / 2f, centerY - (fm.ascent + fm.descent) / 2f, textPaint)
+
+                // Draw minute (stretched)
+                canvas.save()
+                canvas.translate(startX + hourW + colonW, centerY)
+                canvas.scale(1.0f, config.clockHeightScale)
+                canvas.drawText(minutePart, minuteW / 2f, -(fm.ascent + fm.descent) / 2f, textPaint)
+                canvas.restore()
+
+            } else {
+                // VERTICAL MODE
+                val finalLines = currentTime.split(":")
+                val baseSpacing = 20f
+                val extraSpacing = config.lineSpacing
+                val spacing = if (finalLines.size > 1) (baseSpacing + extraSpacing) * config.clockHeightScale else 0f
+                
+                val stretchedLineHeight = lineHeight * config.clockHeightScale
+                var maxWidth = 0f
+                for (line in finalLines) {
+                    maxWidth = maxOf(maxWidth, textPaint.measureText(line))
+                }
+
+                val totalHeight = (stretchedLineHeight * finalLines.size) + spacing
+                val padding = 60
+                val width = (maxWidth + padding).toInt()
+                val height = (totalHeight + padding).toInt()
+
+                if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
+                    timeBitmap?.recycle()
+                    timeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                }
+
+                timeBitmap?.eraseColor(Color.TRANSPARENT)
+                val canvas = Canvas(timeBitmap!!)
+
+                var currentY = padding / 2f
+                for (i in finalLines.indices) {
+                    val line = finalLines[i]
+                    canvas.save()
+                    canvas.translate(width / 2f, currentY + stretchedLineHeight / 2f)
+                    canvas.scale(1.0f, config.clockHeightScale)
+                    canvas.drawText(line, 0f, -(fm.ascent + fm.descent) / 2f, textPaint)
+                    canvas.restore()
+                    
+                    currentY += stretchedLineHeight
+                    if (finalLines.size > 1 && i == 0) {
+                        currentY += spacing
+                    }
+                }
+            }
         }
-    }
-}
     }
 
     private external fun renderNativeFrame(
