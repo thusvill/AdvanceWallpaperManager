@@ -41,6 +41,7 @@ class TfliteSelfieSegmenter(
         Thread {
             try {
                 if (config.pipeline == Pipeline.MLKIT_SUBJECT) {
+                    ensureMlKitInitialized()
                     val options = SubjectSegmenterOptions.Builder()
                         .enableForegroundConfidenceMask()
                         .build()
@@ -113,6 +114,8 @@ class TfliteSelfieSegmenter(
 
         val maskWidth = bitmap.width
         val maskHeight = bitmap.height
+
+        Log.d(TAG, "ML Kit Mask capacity: ${floatBuffer.capacity()}, expected: ${maskWidth * maskHeight}")
 
         val byteBuffer = ByteBuffer.allocateDirect(floatBuffer.capacity() * 4).order(ByteOrder.nativeOrder())
         floatBuffer.rewind()

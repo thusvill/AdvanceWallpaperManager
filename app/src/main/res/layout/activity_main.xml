@@ -279,6 +279,32 @@
                     android:valueTo="1.0" />
 
                 <TextView
+                    android:id="@+id/tv_mlkit_settings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="ML Kit Subject"
+                    android:textColor="#FFFFFFFF"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_label_mlkit_feather"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="ML Kit Feather: 10px"
+                    android:textColor="#D9FFFFFF" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_mlkit_feather"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="1"
+                    android:value="10"
+                    android:valueFrom="1"
+                    android:valueTo="24" />
+
+                <TextView
                     android:id="@+id/tv_saliency_settings"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"

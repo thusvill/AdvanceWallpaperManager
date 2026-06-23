@@ -32,6 +32,8 @@ class CustomDepthWallpaperService : WallpaperService() {
         private var timeBitmap: Bitmap? = null
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
+            isLinearText = false
+
         }
 
         private val receiver = object : BroadcastReceiver() {
@@ -176,38 +178,78 @@ class CustomDepthWallpaperService : WallpaperService() {
             }
         }
 
-        private fun updateTimeBitmap(text: String, config: WallpaperConfig) {
-            textPaint.textSize = config.fontSize
-            textPaint.color = config.fontColor
-            textPaint.typeface = Typeface.DEFAULT_BOLD
-            
-            if (config.fontThickness > 0) {
-                textPaint.style = Paint.Style.FILL_AND_STROKE
-                textPaint.strokeWidth = config.fontThickness
-            } else {
-                textPaint.style = Paint.Style.FILL
-            }
+//        private fun updateTimeBitmap(text: String, config: WallpaperConfig) {
+//            textPaint.textSize = config.fontSize
+//            textPaint.color = config.fontColor
+//            textPaint.typeface = Typeface.DEFAULT_BOLD
+//
+//            if (config.fontThickness > 0) {
+//                textPaint.style = Paint.Style.FILL_AND_STROKE
+//                textPaint.strokeWidth = config.fontThickness
+//            } else {
+//                textPaint.style = Paint.Style.FILL
+//            }
+//
+//            val bounds = Rect()
+//            textPaint.getTextBounds(text, 0, text.length, bounds)
+//
+//            val width = bounds.width() + 40
+//            val height = (bounds.height() * config.clockHeightScale + 40).toInt()
+//
+//            if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
+//                timeBitmap?.recycle()
+//                timeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+//            }
+//
+//            timeBitmap?.eraseColor(Color.TRANSPARENT)
+//            val canvas = Canvas(timeBitmap!!)
+//
+//            // Apply vertical stretch
+//            canvas.save()
+//            canvas.scale(1.0f, config.clockHeightScale, width / 2f, height / 2f)
+//            canvas.drawText(text, width / 2f, height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f, textPaint)
+//            canvas.restore()
+//        }
+private fun updateTimeBitmap(text: String, config: WallpaperConfig) {
 
-            val bounds = Rect()
-            textPaint.getTextBounds(text, 0, text.length, bounds)
-            
-            val width = bounds.width() + 40
-            val height = (bounds.height() * config.clockHeightScale + 40).toInt()
-            
-            if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
-                timeBitmap?.recycle()
-                timeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            }
-            
-            timeBitmap?.eraseColor(Color.TRANSPARENT)
-            val canvas = Canvas(timeBitmap!!)
-            
-            // Apply vertical stretch
-            canvas.save()
-            canvas.scale(1.0f, config.clockHeightScale, width / 2f, height / 2f)
-            canvas.drawText(text, width / 2f, height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f, textPaint)
-            canvas.restore()
-        }
+    val scaledTextSize = config.fontSize * config.clockHeightScale
+    textPaint.textSize = scaledTextSize
+
+
+    textPaint.color = config.fontColor
+    textPaint.typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
+
+    if (config.fontThickness > 0) {
+        textPaint.style = Paint.Style.FILL_AND_STROKE
+        textPaint.strokeWidth = config.fontThickness
+    } else {
+        textPaint.style = Paint.Style.FILL
+    }
+
+    textPaint.textScaleX = 0.85f
+
+
+    val bounds = Rect()
+    textPaint.getTextBounds(text, 0, text.length, bounds)
+
+    val padding = 40
+    val width = bounds.width() + padding
+    val height = bounds.height() + padding
+
+
+    if (timeBitmap == null || timeBitmap!!.width != width || timeBitmap!!.height != height) {
+        timeBitmap?.recycle()
+        timeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    }
+
+    timeBitmap?.eraseColor(Color.TRANSPARENT)
+    val canvas = Canvas(timeBitmap!!)
+
+    val x = width / 2f
+    val y = height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+
+    canvas.drawText(text, x, y, textPaint)
+}
     }
 
     private external fun renderNativeFrame(

@@ -14,6 +14,7 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
@@ -47,9 +48,15 @@ class MainActivity : AppCompatActivity() {
     private var activeExtractionMode: ExtractionMode = ExtractionMode.SELFIE_AI
     private var selfieSegmenter: TfliteSelfieSegmenter? = null
     private var deepLabSegmenter: TfliteSelfieSegmenter? = null
-    private var deepLabPreviewJob: Job? = null
-    private var saliencyMattePreviewJob: Job? = null
+    private var mlKitSegmenter: TfliteSelfieSegmenter? = null
+    private var maskUpdateJob: Job? = null
     private var isApplyingAccuracyMultiplier: Boolean = false  // Flag to prevent recursive updates
+
+    // Caching AI results to avoid re-running slow inference when only parameters change
+    private var cachedAiMask: TfliteSelfieSegmenter.SegmentationMask? = null
+    private var cachedAiMode: ExtractionMode? = null
+    private var cachedSourceUri: Uri? = null
+    private var lastSelectedUri: Uri? = null
 
     private var previewBaseBitmap: Bitmap? = null
     private var previewMaskBitmap: Bitmap? = null
@@ -412,6 +419,10 @@ class MainActivity : AppCompatActivity() {
         binding.sliderSaliencyCleanup.value = currentConfig.saliencyCleanupRadius.toFloat()
         binding.sliderSaliencyEdgeLock.value = currentConfig.saliencyEdgeLock
         updateSaliencyMatteSliderLabels()
+
+        binding.sliderMlkitFeather.value = currentConfig.mlKitFeatherRadius.toFloat()
+        updateMlKitSliderLabels()
+
         binding.sliderStretch.value = currentConfig.clockHeightScale
         updateStretchSliderLabel()
         setActiveExtractionMode(activeExtractionMode)
@@ -427,20 +438,20 @@ class MainActivity : AppCompatActivity() {
             currentConfig.deepLabTargetClassIndex = value.toInt()
             updateDeepLabSliderLabels()
             saveConfig()
-            scheduleDeepLabPreviewUpdate()
+            scheduleMaskRecalculation()
         }
         binding.sliderDeepLabConfidence.addOnChangeListener { _, value, _ ->
             currentConfig.deepLabMinConfidence = value
             updateDeepLabSliderLabels()
             saveConfig()
-            scheduleDeepLabPreviewUpdate()
+            scheduleMaskRecalculation()
         }
         binding.sliderSaliencyThreshold.addOnChangeListener { _, value, _ ->
             if (!isApplyingAccuracyMultiplier) {
                 currentConfig.saliencyThreshold = value
                 updateSaliencyMatteSliderLabels()
                 saveConfig()
-                scheduleSaliencyMattePreviewUpdate()
+                scheduleMaskRecalculation()
             }
         }
         binding.sliderSaliencyFeather.addOnChangeListener { _, value, _ ->
@@ -448,7 +459,7 @@ class MainActivity : AppCompatActivity() {
                 currentConfig.saliencyFeatherRadius = value.toInt()
                 updateSaliencyMatteSliderLabels()
                 saveConfig()
-                scheduleSaliencyMattePreviewUpdate()
+                scheduleMaskRecalculation()
             }
         }
         binding.sliderSaliencyCleanup.addOnChangeListener { _, value, _ ->
@@ -456,7 +467,7 @@ class MainActivity : AppCompatActivity() {
                 currentConfig.saliencyCleanupRadius = value.toInt()
                 updateSaliencyMatteSliderLabels()
                 saveConfig()
-                scheduleSaliencyMattePreviewUpdate()
+                scheduleMaskRecalculation()
             }
         }
         binding.sliderSaliencyEdgeLock.addOnChangeListener { _, value, _ ->
@@ -464,8 +475,15 @@ class MainActivity : AppCompatActivity() {
                 currentConfig.saliencyEdgeLock = value
                 updateSaliencyMatteSliderLabels()
                 saveConfig()
-                scheduleSaliencyMattePreviewUpdate()
+                scheduleMaskRecalculation()
             }
+        }
+
+        binding.sliderMlkitFeather.addOnChangeListener { _, value, _ ->
+            currentConfig.mlKitFeatherRadius = value.toInt()
+            updateMlKitSliderLabels()
+            saveConfig()
+            scheduleMaskRecalculation()
         }
 
         binding.sliderStretch.addOnChangeListener { _, value, _ ->
@@ -568,16 +586,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scheduleAccuracyPreviewUpdate() {
-        lifecycleScope.launch(Dispatchers.Default) {
-            delay(300)  // Debounce: wait 300ms after slider stops
-            withContext(Dispatchers.Main) {
-                when (activeExtractionMode) {
-                    ExtractionMode.SALIENCY_MATTE -> scheduleSaliencyMattePreviewUpdate()
-                    ExtractionMode.HYBRID_DEPTH -> scheduleDeepLabPreviewUpdate()
-                    else -> {}
-                }
-            }
-        }
+        scheduleMaskRecalculation()
     }
 
     private fun resizeClock(multiplier: Float) {
@@ -587,26 +596,127 @@ class MainActivity : AppCompatActivity() {
         requestRender()
     }
 
+    private fun scheduleMaskRecalculation() {
+        maskUpdateJob?.cancel()
+        maskUpdateJob = lifecycleScope.launch(Dispatchers.Default) {
+            delay(300) // Debounce
+            val uri = lastSelectedUri ?: return@launch
+            val mode = activeExtractionMode
+            
+            // If the mode and image are the same as cached, we can skip slow AI inference
+            val canUseCache = cachedAiMask != null && cachedAiMode == mode && cachedSourceUri == uri
+            
+            withContext(Dispatchers.Main) {
+                binding.pbExtraction.visibility = View.VISIBLE
+                binding.pbExtraction.isIndeterminate = true
+                binding.tvStatus.text = "Status: Updating mask..."
+            }
+            
+            try {
+                val options = BitmapFactory.Options().apply {
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                val bitmap = BitmapFactory.decodeFile(currentConfig.baseImagePath, options) ?: return@launch
+                val maskBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+                val maskFile = File(getExternalFilesDir(null), "mask.png")
+
+                var success = false
+                
+                if (canUseCache) {
+                    val mask = cachedAiMask!!
+                    success = when (mode) {
+                        ExtractionMode.SELFIE_AI, ExtractionMode.DEEPLAB_V3_MOBILENET_V2 -> {
+                            extractMaskNative(bitmap, mask.buffer, mask.width, mask.height, maskBitmap)
+                        }
+                        ExtractionMode.MLKIT_SUBJECT -> {
+                            extractSaliencyMatteNative(
+                                bitmap, mask.buffer, mask.width, mask.height, maskBitmap,
+                                0.4f, currentConfig.mlKitFeatherRadius, 2, 0.5f
+                            )
+                        }
+                        ExtractionMode.SALIENCY_MATTE -> {
+                            extractSaliencyMatteNative(
+                                bitmap, mask.buffer, mask.width, mask.height, maskBitmap,
+                                currentConfig.saliencyThreshold,
+                                currentConfig.saliencyFeatherRadius,
+                                currentConfig.saliencyCleanupRadius,
+                                currentConfig.saliencyEdgeLock
+                            )
+                        }
+                        ExtractionMode.HYBRID_DEPTH -> {
+                            extractHybridMaskNative(
+                                bitmap, mask.buffer, mask.width, mask.height, maskBitmap,
+                                currentConfig.deepLabMinConfidence.coerceAtLeast(0.15f),
+                                binding.sliderThreshold.value,
+                                HYBRID_FEATHER_RADIUS
+                            )
+                        }
+                        ExtractionMode.EDGE -> {
+                            extractEdgesNative(bitmap, maskBitmap, binding.sliderThreshold.value)
+                        }
+                    }
+                } else {
+                    // Re-run full extraction logic (this part matches processSelectedImage but simplified)
+                    // For now, if no cache, just call processSelectedImage again
+                    withContext(Dispatchers.Main) {
+                        processSelectedImage(uri, mode)
+                    }
+                    maskBitmap.recycle()
+                    bitmap.recycle()
+                    return@launch
+                }
+
+                if (success) {
+                    FileOutputStream(maskFile).use { maskBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    currentConfig.foregroundMaskPath = maskFile.absolutePath
+                    withContext(Dispatchers.Main) {
+                        updatePreviewBitmaps()
+                        requestRender()
+                        saveConfig()
+                        notifyService()
+                        binding.pbExtraction.visibility = View.GONE
+                        binding.tvStatus.text = "Status: Updated"
+                    }
+                }
+                maskBitmap.recycle()
+                bitmap.recycle()
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    binding.pbExtraction.visibility = View.GONE
+                    binding.tvStatus.text = "Status: Update failed"
+                }
+            }
+        }
+    }
+
+    private fun updateMlKitSliderLabels() {
+        binding.tvLabelMlkitFeather.text = "ML Kit Feather: ${currentConfig.mlKitFeatherRadius}px"
+    }
+
     private fun setActiveExtractionMode(mode: ExtractionMode) {
         activeExtractionMode = mode
-        val isMlKit = mode == ExtractionMode.MLKIT_SUBJECT
         val showDeepLab = mode == ExtractionMode.DEEPLAB_V3_MOBILENET_V2 ||
                 mode == ExtractionMode.HYBRID_DEPTH ||
                 mode == ExtractionMode.SALIENCY_MATTE
+        val showMlKit = mode == ExtractionMode.MLKIT_SUBJECT
         val showSaliency = mode == ExtractionMode.SALIENCY_MATTE
         val showEdge = mode == ExtractionMode.EDGE || mode == ExtractionMode.HYBRID_DEPTH
 
-
-        val showParameters = showDeepLab || showSaliency || showEdge
-
+        val showParameters = showDeepLab || showMlKit || showSaliency || showEdge
 
         binding.parameterCard.visibility = if (showParameters) View.VISIBLE else View.GONE
         // Always show accuracy slider when parameters are visible
 
         setViewsVisible(showParameters, binding.tvLabelAccuracy, binding.sliderAccuracy)
         setViewsVisible(showDeepLab, binding.tvDeepLabSettings, binding.tvLabelDeepLabClass, binding.sliderDeepLabClass, binding.tvLabelDeepLabConfidence, binding.sliderDeepLabConfidence)
+        setViewsVisible(showMlKit, binding.tvMlkitSettings, binding.tvLabelMlkitFeather, binding.sliderMlkitFeather)
         setViewsVisible(showSaliency, binding.tvSaliencySettings, binding.tvLabelSaliencyThreshold, binding.sliderSaliencyThreshold, binding.tvLabelSaliencyFeather, binding.sliderSaliencyFeather, binding.tvLabelSaliencyCleanup, binding.sliderSaliencyCleanup, binding.tvLabelSaliencyEdgeLock, binding.sliderSaliencyEdgeLock)
         setViewsVisible(showEdge, binding.tvLabelThreshold, binding.sliderThreshold)
+
+        // Trigger update if we have an image
+        if (lastSelectedUri != null) {
+            scheduleMaskRecalculation()
+        }
     }
 
     private fun setViewsVisible(visible: Boolean, vararg views: View) {
@@ -621,8 +731,18 @@ class MainActivity : AppCompatActivity() {
         sendBroadcast(intent)
     }
 
-    private fun processSelectedImage(uri: Uri, mode: ExtractionMode) {
+    private fun getMlKitSegmenter(): TfliteSelfieSegmenter {
+        mlKitSegmenter?.let { return it }
+        return TfliteSelfieSegmenter(this, TfliteSelfieSegmenter.Config.mlKitSubject()).also {
+            mlKitSegmenter = it
+            it.initialize { success ->
+                if (!success) Log.e("MainActivity", "ML Kit Segmenter failed to init")
+            }
+        }
+    }
 
+    private fun processSelectedImage(uri: Uri, mode: ExtractionMode) {
+        lastSelectedUri = uri
         clearPreviewForNewImage()
         binding.pbExtraction.visibility = View.VISIBLE
         binding.pbExtraction.isIndeterminate = true
@@ -646,14 +766,16 @@ class MainActivity : AppCompatActivity() {
                 val maskBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
                 
                 val success: Boolean
+                var mask: TfliteSelfieSegmenter.SegmentationMask? = null
+                
                 when (mode) {
                     ExtractionMode.SELFIE_AI -> {
-                        val mask = getSelfieSegmenter().segment(bitmap)
+                        mask = getSelfieSegmenter().segment(bitmap)
                             ?: throw Exception("Selfie segmentation failed")
                         success = extractMaskNative(bitmap, mask.buffer, mask.width, mask.height, maskBitmap)
                     }
                     ExtractionMode.DEEPLAB_V3_MOBILENET_V2 -> {
-                        val mask = getDeepLabSegmenter().segment(bitmap)
+                        mask = getDeepLabSegmenter().segment(bitmap)
                             ?: throw Exception("DeepLabV3 MobileNetV2 segmentation failed")
                         success = extractMaskNative(bitmap, mask.buffer, mask.width, mask.height, maskBitmap)
                     }
@@ -668,7 +790,7 @@ class MainActivity : AppCompatActivity() {
                                 targetClassIndex = currentConfig.deepLabTargetClassIndex
                             )
                         )
-                        val mask = try {
+                        mask = try {
                             segmenter.segment(bitmap)
                                 ?: throw Exception("Hybrid DeepLab confidence pass failed")
                         } finally {
@@ -686,34 +808,34 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
                     ExtractionMode.MLKIT_SUBJECT -> {
-
-                        val segmenter = TfliteSelfieSegmenter(
-                            this@MainActivity,
-                            TfliteSelfieSegmenter.Config.mlKitSubject()
-                        )
-                        try {
-                            val mask = segmenter.segment(bitmap) ?: throw Exception("Failed")
-
+                        mask = try {
+                            getMlKitSegmenter().segment(bitmap) ?: throw Exception("ML Kit segmentation failed")
                         } catch (e: Exception) {
-                            if (e.message?.contains("Waiting for") == true) {
+                            if (e.message?.contains("Waiting for", ignoreCase = true) == true ||
+                                e.cause?.message?.contains("Waiting for", ignoreCase = true) == true) {
                                 withContext(Dispatchers.Main) {
                                     binding.tvStatus.text = "Status: Downloading AI model... please wait."
-
                                     delay(5000)
                                     processSelectedImage(uri, mode)
                                 }
+                                return@launch
                             }
+                            throw e
                         }
-
-                        val mask = try {
-                            segmenter.segment(bitmap) ?: throw Exception("ML Kit segmentation failed")
-                        } finally {
-                            segmenter.close()
-                        }
-                        success = extractMaskNative(bitmap, mask.buffer, mask.width, mask.height, maskBitmap)
+                        success = extractSaliencyMatteNative(
+                            bitmap,
+                            mask.buffer,
+                            mask.width,
+                            mask.height,
+                            maskBitmap,
+                            0.4f,
+                            currentConfig.mlKitFeatherRadius,
+                            2,
+                            0.5f
+                        )
                     }
                     ExtractionMode.SALIENCY_MATTE -> {
-                        val mask = runSaliencyMatteSegmenter(bitmap)
+                        mask = runSaliencyMatteSegmenter(bitmap)
                         success = extractSaliencyMatteNative(
                             bitmap,
                             mask.buffer,
@@ -729,6 +851,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 
                 if (success) {
+                    // Update cache for AI-based modes
+                    if (mask != null && (mode == ExtractionMode.MLKIT_SUBJECT || mode == ExtractionMode.SALIENCY_MATTE || mode == ExtractionMode.SELFIE_AI || mode == ExtractionMode.DEEPLAB_V3_MOBILENET_V2)) {
+                        cachedAiMask = mask
+                        cachedAiMode = mode
+                        cachedSourceUri = uri
+                    }
                     FileOutputStream(maskFile).use { maskBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                     currentConfig.foregroundMaskPath = maskFile.absolutePath
                     
@@ -763,6 +891,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearPreviewForNewImage() {
+        cachedAiMask = null
+        cachedAiMode = null
+        cachedSourceUri = null
+        lastSelectedUri = null
         currentConfig.baseImagePath = ""
         currentConfig.foregroundMaskPath = ""
         previewBaseBitmap?.recycle()
@@ -805,6 +937,7 @@ class MainActivity : AppCompatActivity() {
             putInt("saliencyFeatherRadius", currentConfig.saliencyFeatherRadius)
             putInt("saliencyCleanupRadius", currentConfig.saliencyCleanupRadius)
             putFloat("saliencyEdgeLock", currentConfig.saliencyEdgeLock)
+            putInt("mlKitFeatherRadius", currentConfig.mlKitFeatherRadius)
             putFloat("clockHeightScale", currentConfig.clockHeightScale)
             putFloat("accuracyLevel", currentConfig.accuracyLevel)
             apply()
@@ -828,6 +961,7 @@ class MainActivity : AppCompatActivity() {
         // Quantize edge lock to match slider step size (0.1)
         val rawEdgeLock = prefs.getFloat("saliencyEdgeLock", 0.5f)
         currentConfig.saliencyEdgeLock = (kotlin.math.round(rawEdgeLock * 10) / 10).coerceIn(0.0f, 1.0f)
+        currentConfig.mlKitFeatherRadius = prefs.getInt("mlKitFeatherRadius", 10)
         currentConfig.clockHeightScale = prefs.getFloat("clockHeightScale", 1.0f)
         // Quantize accuracy level to match slider step size (0.1)
         val rawAccuracy = prefs.getFloat("accuracyLevel", 1.0f)
@@ -880,144 +1014,6 @@ class MainActivity : AppCompatActivity() {
         ).also { deepLabSegmenter = it }
     }
 
-    private fun scheduleDeepLabPreviewUpdate() {
-        deepLabPreviewJob?.cancel()
-        if (currentConfig.baseImagePath.isEmpty() || !File(currentConfig.baseImagePath).exists()) {
-            return
-        }
-
-        val targetClassIndex = currentConfig.deepLabTargetClassIndex
-        val minConfidence = currentConfig.deepLabMinConfidence
-        deepLabPreviewJob = lifecycleScope.launch {
-            delay(DEEPLAB_PREVIEW_DEBOUNCE_MS)
-            updateDeepLabPreview(targetClassIndex, minConfidence)
-        }
-    }
-
-    private suspend fun updateDeepLabPreview(targetClassIndex: Int, minConfidence: Float) {
-        binding.pbExtraction.visibility = View.VISIBLE
-        binding.pbExtraction.isIndeterminate = true
-        binding.tvStatus.text = "Status: Updating DeepLab preview..."
-
-        val result = withContext(Dispatchers.IO) {
-            var bitmap: Bitmap? = null
-            var maskBitmap: Bitmap? = null
-            val segmenter = TfliteSelfieSegmenter(
-                this@MainActivity,
-                TfliteSelfieSegmenter.Config.deepLabV3MobileNetV2(
-                    targetClassIndex = targetClassIndex,
-                    minConfidence = minConfidence
-                )
-            )
-
-            try {
-                val options = BitmapFactory.Options().apply {
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                }
-                bitmap = BitmapFactory.decodeFile(currentConfig.baseImagePath, options)
-                    ?: return@withContext false
-                maskBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-                val mask = segmenter.segment(bitmap) ?: return@withContext false
-                val success = extractMaskNative(bitmap, mask.buffer, mask.width, mask.height, maskBitmap)
-
-                if (success) {
-                    val maskFile = File(getExternalFilesDir(null), "mask.png")
-                    FileOutputStream(maskFile).use { maskBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                    currentConfig.foregroundMaskPath = maskFile.absolutePath
-                }
-                success
-            } catch (e: Exception) {
-                false
-            } finally {
-                segmenter.close()
-                maskBitmap?.recycle()
-                bitmap?.recycle()
-            }
-        }
-
-        binding.pbExtraction.visibility = View.GONE
-        if (result) {
-            updatePreviewBitmaps()
-            requestRender()
-            saveConfig()
-            notifyService()
-        }
-        updateStatus()
-    }
-
-    private fun scheduleSaliencyMattePreviewUpdate() {
-        saliencyMattePreviewJob?.cancel()
-        if (currentConfig.baseImagePath.isEmpty() || !File(currentConfig.baseImagePath).exists()) {
-            return
-        }
-
-        val threshold = currentConfig.saliencyThreshold
-        val featherRadius = currentConfig.saliencyFeatherRadius
-        val cleanupRadius = currentConfig.saliencyCleanupRadius
-        val edgeLock = currentConfig.saliencyEdgeLock
-        saliencyMattePreviewJob = lifecycleScope.launch {
-            delay(SALIENCY_PREVIEW_DEBOUNCE_MS)
-            updateSaliencyMattePreview(threshold, featherRadius, cleanupRadius, edgeLock)
-        }
-    }
-
-    private suspend fun updateSaliencyMattePreview(
-        threshold: Float,
-        featherRadius: Int,
-        cleanupRadius: Int,
-        edgeLock: Float
-    ) {
-        binding.pbExtraction.visibility = View.VISIBLE
-        binding.pbExtraction.isIndeterminate = true
-        binding.tvStatus.text = "Status: Updating Saliency Matte..."
-
-        val result = withContext(Dispatchers.IO) {
-            var bitmap: Bitmap? = null
-            var maskBitmap: Bitmap? = null
-            try {
-                val options = BitmapFactory.Options().apply {
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                }
-                bitmap = BitmapFactory.decodeFile(currentConfig.baseImagePath, options)
-                    ?: return@withContext false
-                maskBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-                val mask = runSaliencyMatteSegmenter(bitmap)
-                val success = extractSaliencyMatteNative(
-                    bitmap,
-                    mask.buffer,
-                    mask.width,
-                    mask.height,
-                    maskBitmap,
-                    threshold,
-                    featherRadius,
-                    cleanupRadius,
-                    edgeLock
-                )
-
-                if (success) {
-                    val maskFile = File(getExternalFilesDir(null), "mask.png")
-                    FileOutputStream(maskFile).use { maskBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                    currentConfig.foregroundMaskPath = maskFile.absolutePath
-                }
-                success
-            } catch (e: Exception) {
-                false
-            } finally {
-                maskBitmap?.recycle()
-                bitmap?.recycle()
-            }
-        }
-
-        binding.pbExtraction.visibility = View.GONE
-        if (result) {
-            updatePreviewBitmaps()
-            requestRender()
-            saveConfig()
-            notifyService()
-        }
-        updateStatus()
-    }
-
     private fun runSaliencyMatteSegmenter(bitmap: Bitmap): TfliteSelfieSegmenter.SegmentationMask {
         val segmenter = TfliteSelfieSegmenter(
             this,
@@ -1054,8 +1050,8 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         selfieSegmenter?.close()
         deepLabSegmenter?.close()
-        deepLabPreviewJob?.cancel()
-        saliencyMattePreviewJob?.cancel()
+        mlKitSegmenter?.close()
+        maskUpdateJob?.cancel()
     }
 
     private enum class ExtractionMode(
@@ -1072,8 +1068,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
-        const val DEEPLAB_PREVIEW_DEBOUNCE_MS = 350L
-        const val SALIENCY_PREVIEW_DEBOUNCE_MS = 450L
         const val HYBRID_FEATHER_RADIUS = 8
         const val PREVIEW_SCREEN_HEIGHT_FRACTION = 0.5f
         const val CLOCK_RESIZE_STEP = 1.08f

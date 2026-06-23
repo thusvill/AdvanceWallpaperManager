@@ -193,7 +193,9 @@ Java_com_thusvill_advancewallpapermanager_MainActivity_extractMaskNative(
   }
 
   float *mask = (float *)env->GetDirectBufferAddress(mask_buffer);
-  if (!mask) {
+  jlong capacity = env->GetDirectBufferCapacity(mask_buffer);
+  if (!mask || capacity < (jlong)mask_w * mask_h * 4) {
+    LOGE("extractMaskNative: Invalid mask buffer or capacity (got %lld, need %d)", capacity, mask_w * mask_h * 4);
     AndroidBitmap_unlockPixels(env, original_bitmap);
     AndroidBitmap_unlockPixels(env, output_bitmap);
     return JNI_FALSE;
@@ -339,7 +341,9 @@ Java_com_thusvill_advancewallpapermanager_MainActivity_extractHybridMaskNative(
   }
 
   float *mask = (float *)env->GetDirectBufferAddress(mask_buffer);
-  if (!mask || mask_w <= 0 || mask_h <= 0) {
+  jlong capacity = env->GetDirectBufferCapacity(mask_buffer);
+  if (!mask || mask_w <= 0 || mask_h <= 0 || capacity < (jlong)mask_w * mask_h * 4) {
+    LOGE("extractSaliencyMatteNative: Invalid mask buffer or capacity (got %lld, need %d)", capacity, mask_w * mask_h * 4);
     AndroidBitmap_unlockPixels(env, original_bitmap);
     AndroidBitmap_unlockPixels(env, output_bitmap);
     return JNI_FALSE;
@@ -446,7 +450,9 @@ Java_com_thusvill_advancewallpapermanager_MainActivity_extractSaliencyMatteNativ
   }
 
   float *mask = (float *)env->GetDirectBufferAddress(mask_buffer);
-  if (!mask || mask_w <= 0 || mask_h <= 0) {
+  jlong capacity = env->GetDirectBufferCapacity(mask_buffer);
+  if (!mask || mask_w <= 0 || mask_h <= 0 || capacity < (jlong)mask_w * mask_h * 4) {
+    LOGE("extractSaliencyMatteNative: Invalid mask buffer or capacity (got %lld, need %d)", capacity, mask_w * mask_h * 4);
     AndroidBitmap_unlockPixels(env, original_bitmap);
     AndroidBitmap_unlockPixels(env, output_bitmap);
     return JNI_FALSE;
