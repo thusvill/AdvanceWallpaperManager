@@ -1,6 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
-    id("kotlin-parcelize")
+    alias(libs.plugins.compose.compiler)
 }
 
 android {
@@ -8,16 +8,12 @@ android {
     androidResources {
         noCompress("tflite")
     }
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.thusvill.advancewallpapermanager"
         minSdk = 29
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
@@ -44,7 +40,7 @@ android {
         }
     }
     buildFeatures {
-        viewBinding = true
+        compose = true
     }
 }
 dependencies {
@@ -53,10 +49,20 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
 
-    implementation(files("libs/tensorflow-lite-api-2.10.0-api.jar"))
-    implementation("org.tensorflow:tensorflow-lite:2.10.0") {
-        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
-    }
+    // Compose
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.coil.compose)
+    implementation(libs.gson)
+
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
     implementation("com.google.android.gms:play-services-base:18.10.0")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
