@@ -129,13 +129,12 @@ fun EditorScreen(
             }
         }
 
-        // Top Middle Toggle (Wallpaper / Clock)
         Surface(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 48.dp)
                 .clip(CircleShape),
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f)
+            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f)
         ) {
             Row(modifier = Modifier.padding(4.dp)) {
                 InteractionPill("Clock", uiState.interactionMode == InteractionMode.CLOCK) {
@@ -387,19 +386,22 @@ fun EditorScreen(
                                     }
 
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Custom Fonts", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                                        val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-                                            uri?.let { viewModel.importFont(it) }
-                                        }
-                                        IconButton(onClick = { fontLauncher.launch("*/*") }) {
-                                            Icon(Icons.Default.Add, contentDescription = "Import Font")
-                                        }
+                                    val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+                                        uri?.let { viewModel.importFont(it) }
+                                    }
+                                    OutlinedButton(
+                                        onClick = { fontLauncher.launch("*/*") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = MaterialTheme.shapes.medium
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Import Custom Font")
                                     }
                                     
                                     if (uiState.availableCustomFonts.isNotEmpty()) {
                                         var expandedCust by remember { mutableStateOf(false) }
-                                        Box(modifier = Modifier.padding(top = 4.dp)) {
+                                        Box(modifier = Modifier.padding(top = 8.dp)) {
                                             OutlinedButton(
                                                 onClick = { expandedCust = true }, 
                                                 modifier = Modifier.fillMaxWidth(), 
@@ -477,13 +479,13 @@ fun InteractionPill(text: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(CircleShape)
             .clickable(onClick = onClick),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+        color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
     ) {
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelLarge,
-            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else Color.White,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold
         )
     }
