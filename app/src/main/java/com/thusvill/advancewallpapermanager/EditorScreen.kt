@@ -17,7 +17,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -156,6 +158,20 @@ fun EditorScreen(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
 
+        // Delete Button (Floating Right)
+        if (uiState.config.id != "default") {
+            IconButton(
+                onClick = { viewModel.deleteConfig(onBack) },
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .background(Color.Red.copy(alpha = 0.6f), CircleShape)
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
+            }
+        }
+
         // Toggle Settings Button
         IconButton(
             onClick = { isSettingsVisible = !isSettingsVisible },
@@ -195,7 +211,7 @@ fun EditorScreen(
                                     modifier = Modifier
                                         .tabIndicatorOffset(tabPositions[selectedTab])
                                         .height(34.dp)
-                                        .offset(y = (-4).dp) // Moved up bit
+                                        .offset(y = (-4).dp)
                                         .padding(horizontal = 4.dp)
                                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
                                 )
@@ -300,7 +316,7 @@ fun EditorScreen(
                                         Text(if (is24Hr) "24-Hour Format" else "AM/PM Format", modifier = Modifier.weight(1f), fontSize = 12.sp)
                                         Switch(
                                             checked = is24Hr,
-                                            onCheckedChange = { viewModel.updateConfig { c -> c.copy(use24HourFormat = it) } }
+                                            onCheckedChange = { newValue -> viewModel.updateConfig { c -> c.copy(use24HourFormat = newValue) } }
                                         )
                                     }
 
@@ -324,7 +340,53 @@ fun EditorScreen(
                                     }
 
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Text("Color & Font", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Text("System Fonts", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    
+                                    var expandedSys by remember { mutableStateOf(false) }
+                                    Box(modifier = Modifier.padding(top = 4.dp)) {
+                                        OutlinedButton(onClick = { expandedSys = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                                            Text(if(uiState.config.isCustomFont) "Select System Font" else uiState.config.fontFamily, fontSize = 12.sp)
+                                        }
+                                        DropdownMenu(expanded = expandedSys, onDismissRequest = { expandedSys = false }) {
+                                            systemFonts.forEach { font ->
+                                                DropdownMenuItem(text = { Text(font) }, onClick = {
+                                                    viewModel.updateConfig { it.copy(fontFamily = font) }
+                                                    expandedSys = false
+                                                })
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Custom Fonts", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                        val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+                                            uri?.let { viewModel.importFont(it) }
+                                        }
+                                        IconButton(onClick = { fontLauncher.launch("*/*") }) { // ZIP or TTF
+                                            Icon(Icons.Default.Add, contentDescription = "Import Font")
+                                        }
+                                    }
+                                    
+                                    if (uiState.availableCustomFonts.isNotEmpty()) {
+                                        var expandedCust by remember { mutableStateOf(false) }
+                                        Box(modifier = Modifier.padding(top = 4.dp)) {
+                                            OutlinedButton(onClick = { expandedCust = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                                                Text(if(uiState.config.isCustomFont) uiState.config.customFontName else "Select Custom Font", fontSize = 12.sp)
+                                            }
+                                            DropdownMenu(expanded = expandedCust, onDismissRequest = { expandedCust = false }) {
+                                                uiState.availableCustomFonts.forEach { font ->
+                                                    DropdownMenuItem(text = { Text(font) }, onClick = {
+                                                        viewModel.setCustomFont(font)
+                                                        expandedCust = false
+                                                    })
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("Color", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                     
                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                                         Button(onClick = { viewModel.autoDetectColor() }, modifier = Modifier.weight(1f)) {
@@ -341,21 +403,6 @@ fun EditorScreen(
                                                     .background(color)
                                                     .clickable { viewModel.updateConfig { it.copy(fontColor = color.toArgb()) } }
                                             )
-                                        }
-                                    }
-                                    
-                                    var expanded by remember { mutableStateOf(false) }
-                                    Box(modifier = Modifier.padding(top = 12.dp)) {
-                                        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                                            Text(uiState.config.fontFamily, fontSize = 12.sp)
-                                        }
-                                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                            systemFonts.forEach { font ->
-                                                DropdownMenuItem(text = { Text(font) }, onClick = {
-                                                    viewModel.updateConfig { it.copy(fontFamily = font) }
-                                                    expanded = false
-                                                })
-                                            }
                                         }
                                     }
                                 }

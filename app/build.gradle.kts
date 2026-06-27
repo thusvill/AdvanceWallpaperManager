@@ -68,6 +68,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
 
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

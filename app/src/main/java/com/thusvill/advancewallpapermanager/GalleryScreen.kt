@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,7 +24,8 @@ import androidx.compose.ui.graphics.Color
 @Composable
 fun GalleryScreen(
     configManager: ConfigManager,
-    onNavigateToEditor: (String?) -> Unit
+    onNavigateToEditor: (String?) -> Unit,
+    onNavigateToSettings: () -> Unit
 ) {
     var configs by remember { mutableStateOf(configManager.loadAllConfigs()) }
 
@@ -31,6 +33,11 @@ fun GalleryScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Depth Wallpapers", fontWeight = FontWeight.Bold) },
+                actions = {
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer

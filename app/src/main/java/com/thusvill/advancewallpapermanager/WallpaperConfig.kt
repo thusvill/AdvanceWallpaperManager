@@ -26,6 +26,8 @@ data class WallpaperConfig(
     var lineSpacing: Float = 0f,
     var use24HourFormat: Boolean = true,
     var showAmPm: Boolean = false,
+    var isCustomFont: Boolean = false,
+    var customFontName: String = "",
     var wallpaperScale: Float = 1.0f,
     var wallpaperOffsetX: Float = 0f,
     var wallpaperOffsetY: Float = 0f
@@ -53,6 +55,8 @@ data class WallpaperConfig(
         parcel.readFloat(),
         parcel.readByte() != 0.toByte(),
         parcel.readByte() != 0.toByte(),
+        parcel.readByte() != 0.toByte(),
+        parcel.readString() ?: "",
         parcel.readFloat(),
         parcel.readFloat(),
         parcel.readFloat()
@@ -81,6 +85,8 @@ data class WallpaperConfig(
         parcel.writeFloat(lineSpacing)
         parcel.writeByte(if (use24HourFormat) 1 else 0)
         parcel.writeByte(if (showAmPm) 1 else 0)
+        parcel.writeByte(if (isCustomFont) 1 else 0)
+        parcel.writeString(customFontName)
         parcel.writeFloat(wallpaperScale)
         parcel.writeFloat(wallpaperOffsetX)
         parcel.writeFloat(wallpaperOffsetY)

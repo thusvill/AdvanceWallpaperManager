@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,7 +34,6 @@ class EditorViewModel(application: Application, private val configManager: Confi
     
     private var maskUpdateJob: Job? = null
     
-    // Thread-safe bitmap management
     private val renderLock = Any()
     private var previewBaseBitmap: Bitmap? = null
     private var previewMaskBitmap: Bitmap? = null
@@ -49,26 +49,20 @@ class EditorViewModel(application: Application, private val configManager: Confi
     private var cachedAiMask: TfliteSelfieSegmenter.SegmentationMask? = null
     private var cachedAiMode: ExtractionMode? = null
 
-    // Performance: Ultra-Responsive Render Queue
     private val renderChannel = Channel<Unit>(Channel.CONFLATED)
 
     init {
-        // High-performance render thread (background)
         viewModelScope.launch(Dispatchers.Default) {
             var lastRenderTime = 0L
             for (req in renderChannel) {
                 val now = System.currentTimeMillis()
                 val delta = now - lastRenderTime
-                
-                // Pacing: Max 60 FPS (16ms per frame)
-                if (delta < 16) {
-                    delay(16 - delta)
-                }
-                
+                if (delta < 16) delay(16 - delta)
                 executeRenderFrame()
                 lastRenderTime = System.currentTimeMillis()
             }
         }
+        refreshCustomFonts()
     }
 
     fun loadConfig(configId: String?) {
@@ -82,10 +76,17 @@ class EditorViewModel(application: Application, private val configManager: Confi
             _uiState.update { it.copy(config = config) }
             
             synchronized(renderLock) {
-                previewBaseBitmap?.recycle()
-                previewMaskBitmap?.recycle()
+                previewBaseBitmap?.recycle(); previewMaskBitmap?.recycle()
                 previewBaseBitmap = configManager.loadBundleBitmap(configId, "base")
                 previewMaskBitmap = configManager.loadBundleBitmap(configId, "mask")
+            }
+
+            if (config.isCustomFont) {
+                val fontData = configManager.loadBundleFile(configId, "font.ttf")
+                fontData?.let {
+                    val tempFile = configManager.getFontTempFile(configId)
+                    FileOutputStream(tempFile).use { it.write(fontData) }
+                }
             }
             
             updateTimeBitmap()
@@ -94,21 +95,16 @@ class EditorViewModel(application: Application, private val configManager: Confi
     }
 
     fun setSourceImage(uri: Uri) {
-        cachedAiMask = null
-        cachedAiMode = null
-        
+        cachedAiMask = null; cachedAiMode = null
         viewModelScope.launch(Dispatchers.IO) {
             val bitmap = loadRaw(uri)
             synchronized(renderLock) {
-                previewBaseBitmap?.recycle()
-                previewMaskBitmap?.recycle()
+                previewBaseBitmap?.recycle(); previewMaskBitmap?.recycle()
                 previewBaseBitmap = bitmap
                 previewMaskBitmap = null
             }
-            
             updateTimeBitmap()
             requestPreviewUpdate()
-            
             _uiState.update { it.copy(isExtracting = true, statusText = "Status: Raw image loaded. Extracting...") }
             performExtraction(uiState.value.extractionMode)
         }
@@ -117,38 +113,22 @@ class EditorViewModel(application: Application, private val configManager: Confi
     private fun loadRaw(uri: Uri): Bitmap? {
         val inputStream = context.contentResolver.openInputStream(uri) ?: return null
         val original = BitmapFactory.decodeStream(inputStream) ?: return null
-        
         val metrics = context.resources.displayMetrics
-        val screenW = metrics.widthPixels.toFloat()
-        val screenH = metrics.heightPixels.toFloat()
-
+        val screenW = metrics.widthPixels.toFloat(); val screenH = metrics.heightPixels.toFloat()
         val maxDim = 4096f
         var scale = 1.0f
         if (original.width > maxDim || original.height > maxDim) {
             scale = maxDim / Math.max(original.width.toFloat(), original.height.toFloat())
         }
-
         val coverScale = Math.max(screenW / (original.width * scale), screenH / (original.height * scale))
         val finalScale = scale * coverScale
-
         val offsetX = (screenW - original.width * finalScale) / 2f
         val offsetY = (screenH - original.height * finalScale) / 2f
-        
-        _uiState.update { 
-            it.copy(config = it.config.copy(
-                wallpaperScale = finalScale,
-                wallpaperOffsetX = offsetX,
-                wallpaperOffsetY = offsetY
-            ))
-        }
-
+        _uiState.update { it.copy(config = it.config.copy(wallpaperScale = finalScale, wallpaperOffsetX = offsetX, wallpaperOffsetY = offsetY)) }
         return if (scale < 1.0f) {
             val scaled = Bitmap.createScaledBitmap(original, (original.width * scale).toInt(), (original.height * scale).toInt(), true)
-            original.recycle()
-            scaled
-        } else {
-            original
-        }
+            original.recycle(); scaled
+        } else original
     }
 
     fun setExtractionMode(mode: ExtractionMode) {
@@ -156,28 +136,49 @@ class EditorViewModel(application: Application, private val configManager: Confi
         scheduleMaskRecalculation()
     }
 
+    fun importFont(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val imported = configManager.importFont(uri)
+            if (imported.isNotEmpty()) {
+                refreshCustomFonts()
+                // Auto-select the first imported font if only one
+                if (imported.size == 1) setCustomFont(imported[0])
+            }
+        }
+    }
+
+    fun refreshCustomFonts() {
+        val fonts = configManager.getAvailableCustomFonts()
+        _uiState.update { it.copy(availableCustomFonts = fonts) }
+    }
+
+    fun setCustomFont(fontName: String) {
+        _uiState.update { it.copy(config = it.config.copy(
+            isCustomFont = true,
+            customFontName = fontName,
+            fontFamily = ""
+        )) }
+        updateTimeBitmap()
+        requestPreviewUpdate()
+    }
+
     fun updateConfig(update: (WallpaperConfig) -> WallpaperConfig) {
         val oldConfig = uiState.value.config
         val newConfig = update(oldConfig)
-        _uiState.update { it.copy(config = newConfig) }
-        
-        if (oldConfig.fontFamily != newConfig.fontFamily ||
-            oldConfig.fontSize != newConfig.fontSize ||
-            oldConfig.fontColor != newConfig.fontColor ||
-            oldConfig.fontThickness != newConfig.fontThickness ||
-            oldConfig.letterSpacing != newConfig.letterSpacing ||
-            oldConfig.lineSpacing != newConfig.lineSpacing ||
-            oldConfig.clockHeightScale != newConfig.clockHeightScale ||
-            oldConfig.clockMode != newConfig.clockMode) {
+        val finalConfig = if (newConfig.fontFamily != oldConfig.fontFamily && newConfig.fontFamily.isNotEmpty()) {
+            newConfig.copy(isCustomFont = false, customFontName = "")
+        } else newConfig
+        _uiState.update { it.copy(config = finalConfig) }
+        if (oldConfig.fontFamily != finalConfig.fontFamily || oldConfig.fontSize != finalConfig.fontSize ||
+            oldConfig.fontColor != finalConfig.fontColor || oldConfig.fontThickness != finalConfig.fontThickness ||
+            oldConfig.letterSpacing != finalConfig.letterSpacing || oldConfig.lineSpacing != finalConfig.lineSpacing ||
+            oldConfig.clockHeightScale != finalConfig.clockHeightScale || oldConfig.use24HourFormat != finalConfig.use24HourFormat ||
+            oldConfig.showAmPm != finalConfig.showAmPm || oldConfig.clockMode != finalConfig.clockMode) {
             updateTimeBitmap()
         }
-        
         requestPreviewUpdate()
-
-        if (oldConfig.saliencyThreshold != newConfig.saliencyThreshold ||
-            oldConfig.saliencyFeatherRadius != newConfig.saliencyFeatherRadius ||
-            oldConfig.mlKitFeatherRadius != newConfig.mlKitFeatherRadius ||
-            oldConfig.deepLabTargetClassIndex != newConfig.deepLabTargetClassIndex) {
+        if (oldConfig.saliencyThreshold != finalConfig.saliencyThreshold || oldConfig.saliencyFeatherRadius != finalConfig.saliencyFeatherRadius ||
+            oldConfig.mlKitFeatherRadius != finalConfig.mlKitFeatherRadius || oldConfig.deepLabTargetClassIndex != finalConfig.deepLabTargetClassIndex) {
             scheduleMaskRecalculation()
         }
     }
@@ -193,10 +194,8 @@ class EditorViewModel(application: Application, private val configManager: Confi
     private suspend fun performExtraction(mode: ExtractionMode) {
         val base = synchronized(renderLock) { previewBaseBitmap } ?: return
         val config = uiState.value.config
-        
         withContext(Dispatchers.IO) {
             _uiState.update { it.copy(isExtracting = true, statusText = mode.statusLabel) }
-            
             val mask: Bitmap? = when (mode) {
                 ExtractionMode.SELFIE_AI, ExtractionMode.DEEPLAB_V3_MOBILENET_V2 -> {
                     val aiMask = getAiMask(mode, base)
@@ -231,17 +230,12 @@ class EditorViewModel(application: Application, private val configManager: Confi
                     val aiMask = getAiMask(mode, base)
                     if (aiMask != null) {
                         val out = Bitmap.createBitmap(base.width, base.height, Bitmap.Config.ARGB_8888)
-                        // ML Kit high-quality softening logic:
                         NativeLib.extractSaliencyMatteNative(base, aiMask.buffer, aiMask.width, aiMask.height, out, 0.5f, config.mlKitFeatherRadius, 2, 0.5f)
                         out
                     } else null
                 }
             }
-            
-            synchronized(renderLock) {
-                previewMaskBitmap?.recycle()
-                previewMaskBitmap = mask
-            }
+            synchronized(renderLock) { previewMaskBitmap?.recycle(); previewMaskBitmap = mask }
             _uiState.update { it.copy(isExtracting = false, statusText = "Status: ${mode.toastLabel}") }
             requestPreviewUpdate()
         }
@@ -256,89 +250,61 @@ class EditorViewModel(application: Application, private val configManager: Confi
             else -> getSelfieSegmenter()
         }
         val mask = segmenter.segment(base)
-        cachedAiMask = mask
-        cachedAiMode = mode
+        cachedAiMask = mask; cachedAiMode = mode
         return mask
     }
 
-    private fun getSelfieSegmenter(): TfliteSelfieSegmenter = selfieSegmenter ?: TfliteSelfieSegmenter(context, TfliteSelfieSegmenter.Config.selfie()).also { selfieSegmenter = it }
-    private fun getDeepLabSegmenter(): TfliteSelfieSegmenter = deepLabSegmenter ?: TfliteSelfieSegmenter(context, TfliteSelfieSegmenter.Config.deepLabV3MobileNetV2()).also { deepLabSegmenter = it }
-    private fun getMlKitSegmenter(): TfliteSelfieSegmenter = mlKitSegmenter ?: TfliteSelfieSegmenter(context, TfliteSelfieSegmenter.Config.mlKitSubject()).also { mlKitSegmenter = it }
+    private fun getSelfieSegmenter() = selfieSegmenter ?: TfliteSelfieSegmenter(context, TfliteSelfieSegmenter.Config.selfie()).also { selfieSegmenter = it }
+    private fun getDeepLabSegmenter() = deepLabSegmenter ?: TfliteSelfieSegmenter(context, TfliteSelfieSegmenter.Config.deepLabV3MobileNetV2()).also { deepLabSegmenter = it }
+    private fun getMlKitSegmenter() = mlKitSegmenter ?: TfliteSelfieSegmenter(context, TfliteSelfieSegmenter.Config.mlKitSubject()).also { mlKitSegmenter = it }
 
     private fun updateTimeBitmap() {
         val config = uiState.value.config
-        val format = if (config.use24HourFormat) "HH:mm" else "hh:mm"
+        val format = if (config.use24HourFormat) "HH:mm" else if (config.showAmPm) "hh:mm a" else "hh:mm"
         val currentTime = SimpleDateFormat(format, Locale.getDefault()).format(Date())
-
-        val baseSize = config.fontSize
-        val stretch = config.clockHeightScale
-
-        textPaint.textSize = baseSize * stretch
-        textPaint.textScaleX = 1.0f / stretch
-        textPaint.color = config.fontColor
-
+        val baseSize = config.fontSize; val stretch = config.clockHeightScale
+        textPaint.textSize = baseSize; textPaint.color = config.fontColor
         try {
-            if (config.fontFamily.isNotEmpty()) {
+            if (config.isCustomFont) {
+                // Try library first, then bundle temp
+                var fontFile = configManager.getCustomFontFile(config.customFontName)
+                if (!fontFile.exists()) fontFile = configManager.getFontTempFile(config.id)
+                if (fontFile.exists()) textPaint.typeface = Typeface.createFromFile(fontFile)
+                else textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            } else if (config.fontFamily.isNotEmpty()) {
                 val fontFile = File("/system/fonts", "${config.fontFamily}.ttf")
-                textPaint.typeface = if (fontFile.exists()) {
-                    Typeface.createFromFile(fontFile)
-                } else {
-                    Typeface.create(config.fontFamily, Typeface.BOLD)
-                }
-            } else {
-                textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            }
-        } catch (e: Exception) {
-            textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }
-
+                textPaint.typeface = if (fontFile.exists()) Typeface.createFromFile(fontFile) else Typeface.create(config.fontFamily, Typeface.BOLD)
+            } else textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        } catch (e: Exception) { textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD) }
         textPaint.letterSpacing = config.letterSpacing
-
-        if (config.fontThickness > 0) {
-            textPaint.style = Paint.Style.FILL_AND_STROKE
-            textPaint.strokeWidth = config.fontThickness
-        } else {
-            textPaint.style = Paint.Style.FILL
-        }
-
-        val fm = textPaint.fontMetrics
-        val lineHeight = (fm.descent - fm.ascent)
-
+        if (config.fontThickness > 0) { textPaint.style = Paint.Style.FILL_AND_STROKE; textPaint.strokeWidth = config.fontThickness }
+        else textPaint.style = Paint.Style.FILL
+        val fm = textPaint.fontMetrics; val lineHeight = (fm.descent - fm.ascent); val padding = 60f
         if (config.clockMode == ClockMode.HORIZONTAL) {
-            val hourW = textPaint.measureText(currentTime.substringBefore(":"))
-            val colonW = textPaint.measureText(":")
-            val minuteW = textPaint.measureText(currentTime.substringAfter(":"))
-            val totalW = hourW + colonW + minuteW
-            val width = (totalW + 60).toInt(); val height = (lineHeight + 60).toInt()
-
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            canvas.drawText(currentTime, width / 2f, height / 2f - (fm.ascent + fm.descent) / 2f, textPaint)
-            
-            synchronized(renderLock) {
-                previewTimeBitmap?.recycle()
-                previewTimeBitmap = bitmap
-            }
+            val totalW = textPaint.measureText(currentTime)
+            val width = (totalW + padding).toInt(); val height = (lineHeight * stretch + padding).toInt()
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888); val canvas = Canvas(bitmap)
+            canvas.save(); canvas.translate(width / 2f, height / 2f); canvas.scale(1.0f, stretch)
+            canvas.drawText(currentTime, 0f, -(fm.ascent + fm.descent) / 2f, textPaint); canvas.restore()
+            synchronized(renderLock) { previewTimeBitmap?.recycle(); previewTimeBitmap = bitmap }
         } else {
-            val lines = currentTime.split(":")
-            var maxWidth = 0f
-            for (line in lines) maxWidth = maxOf(maxWidth, textPaint.measureText(line))
-            val spacing = (20f + config.lineSpacing)
-            val totalHeight = (lineHeight * lines.size) + spacing
-            val width = (maxWidth + 60).toInt(); val height = (totalHeight + 60).toInt()
-
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            var currentY = 30f + lineHeight / 2f
-            for (i in lines.indices) {
-                canvas.drawText(lines[i], width / 2f, currentY - (fm.ascent + fm.descent) / 2f, textPaint)
-                currentY += lineHeight + if (i == 0) spacing else 0f
+            val rawTokens = currentTime.split(" "); val finalLines = mutableListOf<String>()
+            for (token in rawTokens) {
+                if (token.contains(":")) { finalLines.add(token.substringBefore(":")); finalLines.add(token.substringAfter(":")) }
+                else finalLines.add(token)
             }
-            
-            synchronized(renderLock) {
-                previewTimeBitmap?.recycle()
-                previewTimeBitmap = bitmap
+            var maxWidth = 0f; for (line in finalLines) maxWidth = maxOf(maxWidth, textPaint.measureText(line))
+            val spacing = config.lineSpacing; val stretchedLineHeight = lineHeight * stretch
+            val totalHeight = (stretchedLineHeight * finalLines.size) + (spacing * (finalLines.size - 1))
+            val width = (maxWidth + padding).toInt(); val height = (Math.max(100f, totalHeight) + padding).toInt()
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888); val canvas = Canvas(bitmap)
+            var currentY = padding / 2f + stretchedLineHeight / 2f
+            for (i in finalLines.indices) {
+                canvas.save(); canvas.translate(width / 2f, currentY); canvas.scale(1.0f, stretch)
+                canvas.drawText(finalLines[i], 0f, -(fm.ascent + fm.descent) / 2f, textPaint); canvas.restore()
+                currentY += stretchedLineHeight + spacing
             }
+            synchronized(renderLock) { previewTimeBitmap?.recycle(); previewTimeBitmap = bitmap }
         }
     }
 
@@ -349,13 +315,11 @@ class EditorViewModel(application: Application, private val configManager: Confi
             val centerX = (base.width * config.clockX).toInt().coerceIn(0, base.width - 1)
             val centerY = (base.height * config.clockY).toInt().coerceIn(0, base.height - 1)
             var r = 0; var g = 0; var b = 0
-            val samples = 5
             for (i in -2..2) {
                 val p = base.getPixel((centerX + i).coerceIn(0, base.width - 1), centerY)
-                r += android.graphics.Color.red(p); g += android.graphics.Color.green(p); b += android.graphics.Color.blue(p)
+                r += Color.red(p); g += Color.green(p); b += Color.blue(p)
             }
-            val avgR = r / samples; val avgG = g / samples; val avgB = b / samples
-            val detected = android.graphics.Color.rgb(255 - avgR, 255 - avgG, 255 - avgB)
+            val detected = Color.rgb(255 - r / 5, 255 - g / 5, 255 - b / 5)
             withContext(Dispatchers.Main) { updateConfig { it.copy(fontColor = detected) } }
         }
     }
@@ -364,11 +328,16 @@ class EditorViewModel(application: Application, private val configManager: Confi
         viewModelScope.launch(Dispatchers.IO) {
             withContext(Dispatchers.Main) { updateTimeBitmap() }
             val preview = generatePreview()
-            synchronized(renderLock) {
-                configManager.saveBundle(uiState.value.config, previewBaseBitmap, previewMaskBitmap, preview)
-            }
+            synchronized(renderLock) { configManager.saveBundle(uiState.value.config, previewBaseBitmap, previewMaskBitmap, preview) }
             withContext(Dispatchers.Main) { onComplete() }
         }
+    }
+
+    fun deleteConfig(onComplete: () -> Unit) {
+        val id = uiState.value.config.id
+        if (id != "default") {
+            viewModelScope.launch(Dispatchers.IO) { configManager.deleteConfig(id); withContext(Dispatchers.Main) { onComplete() } }
+        } else onComplete()
     }
     
     fun applyConfig(onComplete: () -> Unit) {
@@ -396,95 +365,52 @@ class EditorViewModel(application: Application, private val configManager: Confi
     }
 
     private fun generatePreview(): Bitmap? {
-        val config = uiState.value.config
-        val metrics = context.resources.displayMetrics
+        val config = uiState.value.config; val metrics = context.resources.displayMetrics
         val out = Bitmap.createBitmap(metrics.widthPixels, metrics.heightPixels, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        canvas.drawColor(Color.BLACK)
-        
+        val canvas = Canvas(out); canvas.drawColor(Color.BLACK)
         synchronized(renderLock) {
             val base = previewBaseBitmap ?: return null
-            val matrix = Matrix()
-            matrix.postScale(config.wallpaperScale, config.wallpaperScale)
+            val matrix = Matrix(); matrix.postScale(config.wallpaperScale, config.wallpaperScale)
             matrix.postTranslate(config.wallpaperOffsetX, config.wallpaperOffsetY)
             canvas.drawBitmap(base, matrix, null)
-            previewTimeBitmap?.let {
-                val tx = out.width * config.clockX - it.width / 2f
-                val ty = out.height * config.clockY - it.height / 2f
-                canvas.drawBitmap(it, tx, ty, null)
-            }
+            previewTimeBitmap?.let { canvas.drawBitmap(it, out.width * config.clockX - it.width / 2f, out.height * config.clockY - it.height / 2f, null) }
             previewMaskBitmap?.let { canvas.drawBitmap(it, matrix, null) }
         }
-        
         val thumb = Bitmap.createScaledBitmap(out, out.width / 2, out.height / 2, true)
-        out.recycle()
-        return thumb
+        out.recycle(); return thumb
     }
 
-    fun onSurfaceCreated(surface: Surface) {
-        lastSurface = surface
-        requestPreviewUpdate()
-    }
-
-    /**
-     * Performance: Async non-blocking render queue.
-     * Emits a request to the dedicated render loop.
-     */
-    fun requestPreviewUpdate() {
-        viewModelScope.launch {
-            renderChannel.send(Unit)
-        }
-    }
-
+    fun onSurfaceCreated(surface: Surface) { lastSurface = surface; requestPreviewUpdate() }
+    fun requestPreviewUpdate() { viewModelScope.launch { renderChannel.send(Unit) } }
     private fun executeRenderFrame() {
         val surface = lastSurface ?: return
         if (surface.isValid) {
             val config = uiState.value.config
             synchronized(renderLock) {
-                NativeLib.renderNativeFrame(
-                    surface, "", previewBaseBitmap, previewMaskBitmap, previewTimeBitmap,
-                    config.clockX, config.clockY, config.wallpaperScale, 
-                    config.wallpaperOffsetX, config.wallpaperOffsetY
-                )
+                NativeLib.renderNativeFrame(surface, "", previewBaseBitmap, previewMaskBitmap, previewTimeBitmap, config.clockX, config.clockY, config.wallpaperScale, config.wallpaperOffsetX, config.wallpaperOffsetY)
             }
         }
     }
 
     fun handleClockDragDelta(dx: Float, dy: Float, viewWidth: Float, viewHeight: Float) {
-        _uiState.update { it.copy(config = it.config.copy(
-            clockX = (it.config.clockX + dx / viewWidth).coerceIn(0f, 1f),
-            clockY = (it.config.clockY + dy / viewHeight).coerceIn(0f, 1f)
-        )) }
+        _uiState.update { it.copy(config = it.config.copy(clockX = (it.config.clockX + dx / viewWidth).coerceIn(0f, 1f), clockY = (it.config.clockY + dy / viewHeight).coerceIn(0f, 1f))) }
         requestPreviewUpdate()
     }
 
     fun handleWallpaperTransform(dx: Float, dy: Float, zoom: Float, viewWidth: Float, viewHeight: Float) {
         _uiState.update {
             val newScale = (it.config.wallpaperScale * zoom).coerceIn(0.5f, 10.0f)
-            it.copy(config = it.config.copy(
-                wallpaperScale = newScale,
-                wallpaperOffsetX = (it.config.wallpaperOffsetX + dx).coerceIn(-viewWidth * 2, viewWidth * 2),
-                wallpaperOffsetY = (it.config.wallpaperOffsetY + dy).coerceIn(-viewHeight * 2, viewHeight * 2)
-            ))
+            it.copy(config = it.config.copy(wallpaperScale = newScale, wallpaperOffsetX = (it.config.wallpaperOffsetX + dx).coerceIn(-viewWidth * 2, viewWidth * 2), wallpaperOffsetY = (it.config.wallpaperOffsetY + dy).coerceIn(-viewHeight * 2, viewHeight * 2)))
         }
         requestPreviewUpdate()
     }
 
-    fun updateInteraction(update: (InteractionMode) -> InteractionMode) { 
-        _uiState.update { it.copy(interactionMode = update(it.interactionMode)) } 
-    }
-
+    fun updateInteraction(update: (InteractionMode) -> InteractionMode) { _uiState.update { it.copy(interactionMode = update(it.interactionMode)) } }
     override fun onCleared() { 
-        selfieSegmenter?.close()
-        deepLabSegmenter?.close()
-        mlKitSegmenter?.close()
-        synchronized(renderLock) {
-            previewBaseBitmap?.recycle()
-            previewMaskBitmap?.recycle()
-            previewTimeBitmap?.recycle()
-        }
+        selfieSegmenter?.close(); deepLabSegmenter?.close(); mlKitSegmenter?.close()
+        synchronized(renderLock) { previewBaseBitmap?.recycle(); previewMaskBitmap?.recycle(); previewTimeBitmap?.recycle() }
     }
 }
 
 enum class InteractionMode { CLOCK, WALLPAPER }
-data class EditorUiState(val config: WallpaperConfig = WallpaperConfig(), val isExtracting: Boolean = false, val statusText: String = "Status: Select an image", val extractionMode: ExtractionMode = ExtractionMode.MLKIT_SUBJECT, val interactionMode: InteractionMode = InteractionMode.CLOCK)
+data class EditorUiState(val config: WallpaperConfig = WallpaperConfig(), val isExtracting: Boolean = false, val statusText: String = "Status: Select an image", val extractionMode: ExtractionMode = ExtractionMode.MLKIT_SUBJECT, val interactionMode: InteractionMode = InteractionMode.CLOCK, val availableCustomFonts: List<String> = emptyList())

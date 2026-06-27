@@ -25,6 +25,9 @@ fun AppNavGraph(
                     } else {
                         navController.navigate("editor/new")
                     }
+                },
+                onNavigateToSettings = {
+                    navController.navigate("settings")
                 }
             )
         }
@@ -35,6 +38,12 @@ fun AppNavGraph(
             val configId = backStackEntry.arguments?.getString("configId")
             EditorScreen(
                 configId = if (configId == "new") null else configId,
+                configManager = configManager,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("settings") {
+            SettingsScreen(
                 configManager = configManager,
                 onBack = { navController.popBackStack() }
             )

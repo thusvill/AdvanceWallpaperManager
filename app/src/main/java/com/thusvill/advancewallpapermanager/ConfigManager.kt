@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import com.google.gson.Gson
@@ -14,8 +15,7 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
- * Manages Depth Wallpaper (.dwp) binary bundles.
- * Each bundle is a ZIP file containing config.json and image assets.
+ * Manages Depth Wallpaper (.dwp) binary bundles and Custom Font Library.
  */
 class ConfigManager(private val context: Context) {
     private val gson = Gson()
@@ -27,6 +27,64 @@ class ConfigManager(private val context: Context) {
         appDir
     }
 
+    private val customFontsDir: File by lazy {
+        val dir = File(context.filesDir, "custom_fonts")
+        if (!dir.exists()) dir.mkdirs()
+        dir
+    }
+
+    /**
+     * Imports a font file (.ttf, .otf) or a .zip bundle into the app's library.
+     */
+    fun importFont(uri: Uri): List<String> {
+        val importedNames = mutableListOf<String>()
+        val fileName = getFileName(uri) ?: "unknown"
+        
+        try {
+            if (fileName.lowercase().endsWith(".zip")) {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    ZipInputStream(input).use { zis ->
+                        var entry = zis.nextEntry
+                        while (entry != null) {
+                            if (!entry.isDirectory && (entry.name.lowercase().endsWith(".ttf") || entry.name.lowercase().endsWith(".otf"))) {
+                                val fontName = File(entry.name).name
+                                val destFile = File(customFontsDir, fontName)
+                                destFile.outputStream().use { output -> zis.copyTo(output) }
+                                importedNames.add(fontName)
+                            }
+                            entry = zis.nextEntry
+                        }
+                    }
+                }
+            } else if (fileName.lowercase().endsWith(".ttf") || fileName.lowercase().endsWith(".otf")) {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    val fontName = fileName
+                    val destFile = File(customFontsDir, fontName)
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                    importedNames.add(fontName)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ConfigManager", "Failed to import font $fileName", e)
+        }
+        return importedNames
+    }
+
+    fun getAvailableCustomFonts(): List<String> {
+        return customFontsDir.listFiles()?.map { it.name }?.sorted() ?: emptyList()
+    }
+
+    fun getCustomFontFile(name: String): File {
+        return File(customFontsDir, name)
+    }
+
+    private fun getFileName(uri: Uri): String? {
+        return context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst()) cursor.getString(index) else null
+        }
+    }
+
     /**
      * Saves all assets into a single .dwp binary file.
      */
@@ -34,7 +92,8 @@ class ConfigManager(private val context: Context) {
         config: WallpaperConfig,
         baseBitmap: Bitmap?,
         maskBitmap: Bitmap?,
-        previewBitmap: Bitmap?
+        previewBitmap: Bitmap?,
+        customFontName: String? = null
     ): String {
         val id = if (config.id == "default" || config.id.isEmpty()) UUID.randomUUID().toString() else config.id
         config.id = id
@@ -53,6 +112,26 @@ class ConfigManager(private val context: Context) {
                 baseBitmap?.let { saveImageToZip(it, "base.png", zos) }
                 maskBitmap?.let { saveImageToZip(it, "mask.png", zos) }
                 previewBitmap?.let { saveImageToZip(it, "preview.png", zos) }
+
+                // 3. Embed Custom Font if active
+                if (config.isCustomFont) {
+                    val fontToEmbed = customFontName ?: config.customFontName
+                    if (fontToEmbed.isNotEmpty()) {
+                        val fontFile = getCustomFontFile(fontToEmbed)
+                        if (fontFile.exists()) {
+                            zos.putNextEntry(ZipEntry("font.ttf"))
+                            fontFile.inputStream().use { it.copyTo(zos) }
+                            zos.closeEntry()
+                        } else {
+                            // Try to recover from existing bundle if re-saving
+                            loadBundleFile(id, "font.ttf")?.let { data ->
+                                zos.putNextEntry(ZipEntry("font.ttf"))
+                                zos.write(data)
+                                zos.closeEntry()
+                            }
+                        }
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e("ConfigManager", "Failed to save bundle $id", e)
@@ -123,6 +202,39 @@ class ConfigManager(private val context: Context) {
     }
 
     /**
+     * Generic file loader from bundle (used for fonts)
+     */
+    fun loadBundleFile(id: String, fileName: String): ByteArray? {
+        val file = File(configsDir, "$id.dwp")
+        if (!file.exists()) return null
+        
+        return try {
+            ZipInputStream(FileInputStream(file)).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (entry.name == fileName) {
+                        return zis.readBytes()
+                    }
+                    entry = zis.nextEntry
+                }
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("ConfigManager", "Error loading $fileName from bundle $id", e)
+            null
+        }
+    }
+
+    /**
+     * Utility to get a temporary file for a custom font.
+     */
+    fun getFontTempFile(id: String): File {
+        val tempDir = File(context.cacheDir, "fonts")
+        if (!tempDir.exists()) tempDir.mkdirs()
+        return File(tempDir, "$id.ttf")
+    }
+
+    /**
      * Lists all available configuration bundles.
      */
     fun loadAllConfigs(): List<WallpaperConfig> {
@@ -136,6 +248,8 @@ class ConfigManager(private val context: Context) {
     fun deleteConfig(id: String) {
         val file = File(configsDir, "$id.dwp")
         if (file.exists()) file.delete()
+        val tempFont = getFontTempFile(id)
+        if (tempFont.exists()) tempFont.delete()
     }
 
     fun getActiveConfigId(): String? {
