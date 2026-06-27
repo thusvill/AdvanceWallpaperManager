@@ -13,7 +13,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -135,7 +135,7 @@ fun EditorScreen(
                 .align(Alignment.TopCenter)
                 .padding(top = 48.dp)
                 .clip(CircleShape),
-            color = Color.Black.copy(alpha = 0.5f)
+            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f)
         ) {
             Row(modifier = Modifier.padding(4.dp)) {
                 InteractionPill("Clock", uiState.interactionMode == InteractionMode.CLOCK) {
@@ -148,39 +148,48 @@ fun EditorScreen(
         }
 
         // Back Button (Floating)
-        IconButton(
+        FilledIconButton(
             onClick = onBack,
             modifier = Modifier
                 .statusBarsPadding()
-                .padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                .padding(16.dp),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f),
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
         ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
         }
 
         // Delete Button (Floating Right)
         if (uiState.config.id != "default") {
-            IconButton(
+            FilledIconButton(
                 onClick = { viewModel.deleteConfig(onBack) },
                 modifier = Modifier
                     .statusBarsPadding()
                     .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .background(Color.Red.copy(alpha = 0.6f), CircleShape)
+                    .padding(16.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
             ) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
+                Icon(Icons.Default.Delete, contentDescription = "Delete")
             }
         }
 
         // Toggle Settings Button
-        IconButton(
+        FilledIconButton(
             onClick = { isSettingsVisible = !isSettingsVisible },
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 16.dp)
-                .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                .padding(end = 16.dp),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f),
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
         ) {
-            Icon(if (isSettingsVisible) Icons.Default.Close else Icons.Default.Settings, contentDescription = "Toggle Settings", tint = Color.White)
+            Icon(if (isSettingsVisible) Icons.Default.Close else Icons.Default.Settings, contentDescription = "Toggle Settings")
         }
 
         // Floating Settings Window (Bottom 1/4th)
@@ -193,10 +202,10 @@ fun EditorScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(320.dp),
-                shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
-                elevation = CardDefaults.cardElevation(24.dp)
+                    .height(340.dp),
+                shape = MaterialTheme.shapes.extraLarge.copy(bottomStart = CornerSize(0.dp), bottomEnd = CornerSize(0.dp)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.98f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     // Pill Tab Bar
@@ -213,7 +222,7 @@ fun EditorScreen(
                                         .height(34.dp)
                                         .offset(y = (-4).dp)
                                         .padding(horizontal = 4.dp)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
                                 )
                             }
                         }
@@ -223,7 +232,13 @@ fun EditorScreen(
                             Tab(
                                 selected = selectedTab == index,
                                 onClick = { selectedTab = index },
-                                text = { Text(title, fontSize = 13.sp, fontWeight = if(selectedTab == index) FontWeight.Bold else FontWeight.Normal) }
+                                text = { 
+                                    Text(
+                                        title, 
+                                        style = if(selectedTab == index) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
+                                        color = if(selectedTab == index) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    ) 
+                                }
                             )
                         }
                     }
@@ -235,11 +250,19 @@ fun EditorScreen(
                         Column(modifier = Modifier.padding(vertical = 12.dp)) {
                             when (selectedTab) {
                                 0 -> { // Source
-                                    Button(onClick = { launcher.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
+                                    Button(
+                                        onClick = { launcher.launch("image/*") }, 
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = MaterialTheme.shapes.medium
+                                    ) {
                                         Text("Pick New Image")
                                     }
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Text(uiState.statusText, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                                    Text(
+                                        uiState.statusText, 
+                                        style = MaterialTheme.typography.labelSmall, 
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                                 1 -> { // Model
                                     SectionTitle("Pipeline")
@@ -248,13 +271,14 @@ fun EditorScreen(
                                             FilterChip(
                                                 selected = uiState.extractionMode == mode,
                                                 onClick = { viewModel.setExtractionMode(mode) },
-                                                label = { Text(mode.displayName, fontSize = 10.sp) },
-                                                modifier = Modifier.padding(end = 6.dp)
+                                                label = { Text(mode.displayName) },
+                                                modifier = Modifier.padding(end = 8.dp),
+                                                shape = MaterialTheme.shapes.medium
                                             )
                                         }
                                     }
                                     
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     
                                     when (uiState.extractionMode) {
                                         ExtractionMode.DEEPLAB_V3_MOBILENET_V2 -> {
@@ -291,36 +315,37 @@ fun EditorScreen(
                                     }
                                 }
                                 2 -> { // Clock
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                         OutlinedButton(
                                             onClick = { viewModel.updateConfig { it.copy(clockMode = ClockMode.HORIZONTAL) } },
                                             modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(12.dp),
-                                            border = if (uiState.config.clockMode == ClockMode.HORIZONTAL) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonBorder
+                                            shape = MaterialTheme.shapes.medium,
+                                            colors = if (uiState.config.clockMode == ClockMode.HORIZONTAL) ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) else ButtonDefaults.outlinedButtonColors()
                                         ) {
-                                            Text("Horizontal", fontSize = 11.sp)
+                                            Text("Horizontal")
                                         }
                                         OutlinedButton(
                                             onClick = { viewModel.updateConfig { it.copy(clockMode = ClockMode.VERTICAL) } },
                                             modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(12.dp),
-                                            border = if (uiState.config.clockMode == ClockMode.VERTICAL) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else ButtonDefaults.outlinedButtonBorder
+                                            shape = MaterialTheme.shapes.medium,
+                                            colors = if (uiState.config.clockMode == ClockMode.VERTICAL) ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) else ButtonDefaults.outlinedButtonColors()
                                         ) {
-                                            Text("Vertical", fontSize = 11.sp)
+                                            Text("Vertical")
                                         }
                                     }
                                     
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                        val is24Hr = uiState.config.use24HourFormat
-                                        Text(if (is24Hr) "24-Hour Format" else "AM/PM Format", modifier = Modifier.weight(1f), fontSize = 12.sp)
-                                        Switch(
-                                            checked = is24Hr,
-                                            onCheckedChange = { newValue -> viewModel.updateConfig { c -> c.copy(use24HourFormat = newValue) } }
-                                        )
-                                    }
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    ListItem(
+                                        headlineContent = { Text(if (uiState.config.use24HourFormat) "24-Hour Format" else "AM/PM Format") },
+                                        trailingContent = {
+                                            Switch(
+                                                checked = uiState.config.use24HourFormat,
+                                                onCheckedChange = { newValue -> viewModel.updateConfig { c -> c.copy(use24HourFormat = newValue) } }
+                                            )
+                                        },
+                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                    )
 
-                                    Spacer(modifier = Modifier.height(12.dp))
                                     SliderItem("Size", uiState.config.fontSize, 50f..600f) {
                                         viewModel.updateConfig { c -> c.copy(fontSize = it) }
                                     }
@@ -339,13 +364,17 @@ fun EditorScreen(
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text("System Fonts", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    SectionTitle("Font Family")
                                     
                                     var expandedSys by remember { mutableStateOf(false) }
                                     Box(modifier = Modifier.padding(top = 4.dp)) {
-                                        OutlinedButton(onClick = { expandedSys = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                                            Text(if(uiState.config.isCustomFont) "Select System Font" else uiState.config.fontFamily, fontSize = 12.sp)
+                                        OutlinedButton(
+                                            onClick = { expandedSys = true }, 
+                                            modifier = Modifier.fillMaxWidth(), 
+                                            shape = MaterialTheme.shapes.medium
+                                        ) {
+                                            Text(if(uiState.config.isCustomFont) "Select System Font" else uiState.config.fontFamily)
                                         }
                                         DropdownMenu(expanded = expandedSys, onDismissRequest = { expandedSys = false }) {
                                             systemFonts.forEach { font ->
@@ -359,11 +388,11 @@ fun EditorScreen(
 
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Custom Fonts", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                        Text("Custom Fonts", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                                         val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
                                             uri?.let { viewModel.importFont(it) }
                                         }
-                                        IconButton(onClick = { fontLauncher.launch("*/*") }) { // ZIP or TTF
+                                        IconButton(onClick = { fontLauncher.launch("*/*") }) {
                                             Icon(Icons.Default.Add, contentDescription = "Import Font")
                                         }
                                     }
@@ -371,8 +400,12 @@ fun EditorScreen(
                                     if (uiState.availableCustomFonts.isNotEmpty()) {
                                         var expandedCust by remember { mutableStateOf(false) }
                                         Box(modifier = Modifier.padding(top = 4.dp)) {
-                                            OutlinedButton(onClick = { expandedCust = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                                                Text(if(uiState.config.isCustomFont) uiState.config.customFontName else "Select Custom Font", fontSize = 12.sp)
+                                            OutlinedButton(
+                                                onClick = { expandedCust = true }, 
+                                                modifier = Modifier.fillMaxWidth(), 
+                                                shape = MaterialTheme.shapes.medium
+                                            ) {
+                                                Text(if(uiState.config.isCustomFont) uiState.config.customFontName else "Select Custom Font")
                                             }
                                             DropdownMenu(expanded = expandedCust, onDismissRequest = { expandedCust = false }) {
                                                 uiState.availableCustomFonts.forEach { font ->
@@ -385,22 +418,27 @@ fun EditorScreen(
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text("Color", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    SectionTitle("Clock Color")
                                     
                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                                        Button(onClick = { viewModel.autoDetectColor() }, modifier = Modifier.weight(1f)) {
-                                            Text("Auto Color", fontSize = 11.sp)
+                                        FilledTonalButton(
+                                            onClick = { viewModel.autoDetectColor() }, 
+                                            modifier = Modifier.weight(1f),
+                                            shape = MaterialTheme.shapes.medium
+                                        ) {
+                                            Text("Auto Color", fontSize = 12.sp)
                                         }
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Spacer(modifier = Modifier.width(12.dp))
                                         val colors = listOf(Color.White, Color.Black, Color.Red, Color.Cyan, Color.Yellow, Color.Green, Color.Magenta)
                                         colors.forEach { color ->
                                             Box(
                                                 modifier = Modifier
-                                                    .size(28.dp)
+                                                    .size(32.dp)
                                                     .padding(2.dp)
                                                     .clip(CircleShape)
                                                     .background(color)
+                                                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
                                                     .clickable { viewModel.updateConfig { it.copy(fontColor = color.toArgb()) } }
                                             )
                                         }
@@ -410,7 +448,7 @@ fun EditorScreen(
                                     Button(
                                         onClick = { viewModel.applyConfig(onBack) },
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(16.dp)
+                                        shape = MaterialTheme.shapes.large
                                     ) {
                                         Text("Apply & Auto-Save")
                                     }
@@ -418,13 +456,13 @@ fun EditorScreen(
                                     OutlinedButton(
                                         onClick = { viewModel.saveConfig(onBack) },
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(16.dp)
+                                        shape = MaterialTheme.shapes.large
                                     ) {
                                         Text("Save Only")
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(24.dp))
+                            Spacer(modifier = Modifier.height(32.dp))
                         }
                     }
                 }
@@ -439,13 +477,13 @@ fun InteractionPill(text: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(CircleShape)
             .clickable(onClick = onClick),
-        color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     ) {
         Text(
             text = text,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-            fontSize = 12.sp,
-            color = if (selected) MaterialTheme.colorScheme.onPrimary else Color.White,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else Color.White,
             fontWeight = FontWeight.Bold
         )
     }
@@ -455,25 +493,28 @@ fun InteractionPill(text: String, selected: Boolean, onClick: () -> Unit) {
 fun SectionTitle(title: String) {
     Text(
         text = title,
-        fontWeight = FontWeight.Bold,
-        fontSize = 14.sp,
-        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
     )
 }
 
 @Composable
 fun SliderItem(label: String, value: Float, range: ClosedFloatingPointRange<Float>, step: Float = 0f, onValueChange: (Float) -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (step == 1f) value.toInt().toString() else "%.2f".format(value), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (step == 1f) value.toInt().toString() else "%.2f".format(value), 
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
         }
         Slider(
             value = value,
             onValueChange = onValueChange,
             valueRange = range,
-            steps = if (step > 0) ((range.endInclusive - range.start) / step).toInt() - 1 else 0,
-            modifier = Modifier.height(24.dp)
+            steps = if (step > 0) ((range.endInclusive - range.start) / step).toInt() - 1 else 0
         )
     }
 }

@@ -7,15 +7,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,80 +35,95 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showFontDeleteDialog by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold) },
+            MediumTopAppBar(
+                title = { Text("Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                scrollBehavior = scrollBehavior
             )
         }
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .padding(paddingValues),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 1. Config Rotation
             item {
-                Text("Wallpaper Rotation", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Wallpaper Rotation", 
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
                 
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RotationOption("None", uiState.rotationMode == RotationMode.NONE) {
-                        viewModel.setRotationMode(RotationMode.NONE)
-                    }
-                    RotationOption("Daily", uiState.rotationMode == RotationMode.DAILY) {
-                        viewModel.setRotationMode(RotationMode.DAILY)
-                    }
-                    RotationOption("Hourly", uiState.rotationMode == RotationMode.HOURLY) {
-                        viewModel.setRotationMode(RotationMode.HOURLY)
-                    }
-                    if (uiState.rotationMode == RotationMode.HOURLY) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Interval: ${uiState.hourInterval} hours", fontSize = 14.sp)
-                            Slider(
-                                value = uiState.hourInterval.toFloat(),
-                                onValueChange = { viewModel.setHourInterval(it.toInt()) },
-                                valueRange = 1f..12f,
-                                steps = 10,
-                                modifier = Modifier.padding(start = 16.dp)
-                            )
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                ) {
+                    Column {
+                        RotationOption("None", uiState.rotationMode == RotationMode.NONE) {
+                            viewModel.setRotationMode(RotationMode.NONE)
                         }
-                    }
-                    RotationOption("On Awake", uiState.rotationMode == RotationMode.ON_AWAKE) {
-                        viewModel.setRotationMode(RotationMode.ON_AWAKE)
+                        RotationOption("Daily", uiState.rotationMode == RotationMode.DAILY) {
+                            viewModel.setRotationMode(RotationMode.DAILY)
+                        }
+                        RotationOption("Hourly", uiState.rotationMode == RotationMode.HOURLY) {
+                            viewModel.setRotationMode(RotationMode.HOURLY)
+                        }
+                        if (uiState.rotationMode == RotationMode.HOURLY) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                Text("Interval: ${uiState.hourInterval} hours", style = MaterialTheme.typography.bodySmall)
+                                Slider(
+                                    value = uiState.hourInterval.toFloat(),
+                                    onValueChange = { viewModel.setHourInterval(it.toInt()) },
+                                    valueRange = 1f..12f,
+                                    steps = 10
+                                )
+                            }
+                        }
+                        RotationOption("On Awake", uiState.rotationMode == RotationMode.ON_AWAKE) {
+                            viewModel.setRotationMode(RotationMode.ON_AWAKE)
+                        }
                     }
                 }
             }
 
             // 2. Font Management
             item {
-                Text("Font Management", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Font Management", 
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                )
                 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
                         uri?.let { viewModel.importFont(it) }
                     }
                     Button(
                         onClick = { fontLauncher.launch("*/*") },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = MaterialTheme.shapes.medium
                     ) {
-                        Text("Import Font/ZIP")
+                        Text("Import Font")
                     }
                     
                     OutlinedButton(
                         onClick = { showFontDeleteDialog = true },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.medium,
                         enabled = uiState.customFonts.isNotEmpty()
                     ) {
                         Text("Delete Fonts")
@@ -119,21 +133,25 @@ fun SettingsScreen(
 
             // 3. Reset Data
             item {
-                Text("System", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Red)
-                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "System", 
+                    style = MaterialTheme.typography.titleMedium, 
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                )
                 
                 Button(
                     onClick = { showResetConfirm = true },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
+                    shape = MaterialTheme.shapes.medium
                 ) {
-                    Text("Reset User Data", color = Color.White)
+                    Text("Reset User Data")
                 }
                 Text(
                     "Warning: This will delete all your wallpaper configs and custom fonts permanently.",
-                    fontSize = 11.sp,
-                    color = Color.Gray,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
@@ -161,7 +179,7 @@ fun SettingsScreen(
                     viewModel.resetUserData()
                     showResetConfirm = false
                 }) {
-                    Text("RESET", color = Color.Red)
+                    Text("RESET", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -175,22 +193,14 @@ fun SettingsScreen(
 
 @Composable
 fun RotationOption(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            RadioButton(selected = selected, onClick = onClick)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-        }
-    }
+    ListItem(
+        headlineContent = { Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+        leadingContent = { RadioButton(selected = selected, onClick = onClick) },
+        modifier = Modifier.clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
+        )
+    )
 }
 
 @Composable
@@ -206,29 +216,28 @@ fun FontDeleteDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(480.dp),
-            shape = RoundedCornerShape(24.dp)
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
-                Text("Select Fonts to Delete", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("Select Fonts to Delete", style = MaterialTheme.typography.titleLarge)
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     items(fonts) { font ->
                         val isSelected = selectedFonts.contains(font)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (isSelected) selectedFonts.remove(font) else selectedFonts.add(font)
-                                }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Checkbox(checked = isSelected, onCheckedChange = {
-                                if (it) selectedFonts.add(font) else selectedFonts.remove(font)
-                            })
-                            Text(font, modifier = Modifier.padding(start = 12.dp))
-                        }
+                        ListItem(
+                            headlineContent = { Text(font) },
+                            leadingContent = {
+                                Checkbox(checked = isSelected, onCheckedChange = {
+                                    if (it) selectedFonts.add(font) else selectedFonts.remove(font)
+                                })
+                            },
+                            modifier = Modifier.clickable {
+                                if (isSelected) selectedFonts.remove(font) else selectedFonts.add(font)
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
                     }
                 }
                 
@@ -242,8 +251,8 @@ fun FontDeleteDialog(
                         onClick = { onDelete(selectedFonts.toList()) },
                         modifier = Modifier.weight(1f),
                         enabled = selectedFonts.isNotEmpty(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                        shape = RoundedCornerShape(12.dp)
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = MaterialTheme.shapes.medium
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
