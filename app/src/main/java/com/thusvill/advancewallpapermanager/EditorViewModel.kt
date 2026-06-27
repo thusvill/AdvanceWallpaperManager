@@ -81,11 +81,27 @@ class EditorViewModel(application: Application, private val configManager: Confi
                 previewMaskBitmap = configManager.loadBundleBitmap(configId, "mask")
             }
 
+            // AUTO-IMPORT & RECOVERY LOGIC
             if (config.isCustomFont) {
-                val fontData = configManager.loadBundleFile(configId, "font.ttf")
-                fontData?.let {
-                    val tempFile = configManager.getFontTempFile(configId)
-                    FileOutputStream(tempFile).use { it.write(fontData) }
+                val fontName = config.customFontName
+                val libFile = configManager.getCustomFontFile(fontName)
+                
+                // If font is missing from library but exists in the bundle, import it permanently
+                if (!libFile.exists()) {
+                    val fontData = configManager.loadBundleFile(configId, "font.ttf")
+                    fontData?.let {
+                        FileOutputStream(libFile).use { it.write(fontData) }
+                        refreshCustomFonts()
+                        Log.i(TAG, "Auto-imported missing font '$fontName' from config bundle.")
+                    }
+                }
+                
+                // Ensure temp preview file exists for the current session
+                val tempFile = configManager.getFontTempFile(configId)
+                if (!tempFile.exists() && libFile.exists()) {
+                    libFile.inputStream().use { input ->
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
+                    }
                 }
             }
             

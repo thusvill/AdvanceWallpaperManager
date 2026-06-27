@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 
 class SettingsViewModel(application: Application, private val configManager: ConfigManager) : AndroidViewModel(application) {
     private val rotationManager = RotationManager(application)
@@ -56,6 +58,39 @@ class SettingsViewModel(application: Application, private val configManager: Con
         }
     }
 
+    fun scanConfigsForFonts() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isScanning = true) }
+            val configs = configManager.loadAllConfigs()
+            var importedCount = 0
+            
+            configs.forEach { config ->
+                if (config.isCustomFont) {
+                    val fontName = config.customFontName
+                    val libFile = configManager.getCustomFontFile(fontName)
+                    
+                    if (!libFile.exists() && fontName.isNotEmpty()) {
+                        // Extract font from this specific bundle
+                        val fontData = configManager.loadBundleFile(config.id, "font.ttf")
+                        fontData?.let { data ->
+                            try {
+                                FileOutputStream(libFile).use { it.write(data) }
+                                importedCount++
+                            } catch (e: Exception) {
+                                android.util.Log.e("SettingsVM", "Failed to auto-import $fontName", e)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            withContext(Dispatchers.Main) {
+                _uiState.update { it.copy(isScanning = false) }
+                loadSettings()
+            }
+        }
+    }
+
     fun resetUserData() {
         viewModelScope.launch(Dispatchers.IO) {
             // 1. Delete all configs
@@ -78,5 +113,6 @@ class SettingsViewModel(application: Application, private val configManager: Con
 data class SettingsUiState(
     val rotationMode: RotationMode = RotationMode.NONE,
     val hourInterval: Int = 1,
-    val customFonts: List<String> = emptyList()
+    val customFonts: List<String> = emptyList(),
+    val isScanning: Boolean = false
 )

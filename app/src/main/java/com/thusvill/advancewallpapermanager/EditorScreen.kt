@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,8 +36,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -129,12 +132,13 @@ fun EditorScreen(
             }
         }
 
+        // Top Interaction Bar (Clock / Wallpaper)
         Surface(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 48.dp)
                 .clip(CircleShape),
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f)
+            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f)
         ) {
             Row(modifier = Modifier.padding(4.dp)) {
                 InteractionPill("Clock", uiState.interactionMode == InteractionMode.CLOCK) {
@@ -218,13 +222,14 @@ fun EditorScreen(
                                 Box(
                                     modifier = Modifier
                                         .tabIndicatorOffset(tabPositions[selectedTab])
-                                        .height(34.dp)
-                                        .offset(y = (-4).dp)
-                                        .padding(horizontal = 4.dp)
+                                        .fillMaxHeight()
+                                        .padding(vertical = 8.dp, horizontal = 4.dp)
                                         .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                                        .zIndex(-1f)
                                 )
                             }
-                        }
+                        },
+                        modifier = Modifier.height(56.dp)
                     ) {
                         val tabs = listOf("Source", "Model", "Clock", "Apply")
                         tabs.forEachIndexed { index, title ->
@@ -335,7 +340,7 @@ fun EditorScreen(
                                     
                                     Spacer(modifier = Modifier.height(16.dp))
                                     ListItem(
-                                        headlineContent = { Text(if (uiState.config.use24HourFormat) "24-Hour Format" else "AM/PM Format") },
+                                        headlineContent = { Text(if (uiState.config.use24HourFormat) "24-Hour Format" else "AM/PM Format", color = MaterialTheme.colorScheme.onSurface) },
                                         trailingContent = {
                                             Switch(
                                                 checked = uiState.config.use24HourFormat,
@@ -366,6 +371,7 @@ fun EditorScreen(
                                     Spacer(modifier = Modifier.height(16.dp))
                                     SectionTitle("Font Family")
                                     
+                                    // SYSTEM FONTS - CLEAN UI
                                     var expandedSys by remember { mutableStateOf(false) }
                                     Box(modifier = Modifier.padding(top = 4.dp)) {
                                         OutlinedButton(
@@ -373,7 +379,10 @@ fun EditorScreen(
                                             modifier = Modifier.fillMaxWidth(), 
                                             shape = MaterialTheme.shapes.medium
                                         ) {
-                                            Text(if(uiState.config.isCustomFont) "Select System Font" else uiState.config.fontFamily)
+                                            Text(
+                                                text = if(uiState.config.isCustomFont) "Select System Font" else uiState.config.fontFamily,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
                                         }
                                         DropdownMenu(expanded = expandedSys, onDismissRequest = { expandedSys = false }) {
                                             systemFonts.forEach { font ->
@@ -386,35 +395,48 @@ fun EditorScreen(
                                     }
 
                                     Spacer(modifier = Modifier.height(12.dp))
+                                    
+                                    // CUSTOM FONTS - UNIFIED SINGLE BUTTON
+                                    var expandedCust by remember { mutableStateOf(false) }
                                     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
                                         uri?.let { viewModel.importFont(it) }
                                     }
-                                    OutlinedButton(
-                                        onClick = { fontLauncher.launch("*/*") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = MaterialTheme.shapes.medium
-                                    ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Import Custom Font")
-                                    }
                                     
-                                    if (uiState.availableCustomFonts.isNotEmpty()) {
-                                        var expandedCust by remember { mutableStateOf(false) }
-                                        Box(modifier = Modifier.padding(top = 8.dp)) {
-                                            OutlinedButton(
-                                                onClick = { expandedCust = true }, 
-                                                modifier = Modifier.fillMaxWidth(), 
-                                                shape = MaterialTheme.shapes.medium
-                                            ) {
-                                                Text(if(uiState.config.isCustomFont) uiState.config.customFontName else "Select Custom Font")
-                                            }
-                                            DropdownMenu(expanded = expandedCust, onDismissRequest = { expandedCust = false }) {
+                                    Box(modifier = Modifier.padding(top = 4.dp)) {
+                                        OutlinedButton(
+                                            onClick = { expandedCust = true }, 
+                                            modifier = Modifier.fillMaxWidth(), 
+                                            shape = MaterialTheme.shapes.medium
+                                        ) {
+                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = if(uiState.config.isCustomFont) uiState.config.customFontName else "Custom Fonts",
+                                                color = MaterialTheme.colorScheme.primary,
+                                                maxLines = 1
+                                            )
+                                        }
+                                        DropdownMenu(expanded = expandedCust, onDismissRequest = { expandedCust = false }) {
+                                            // Integrated Import Action
+                                            DropdownMenuItem(
+                                                text = { Text("Import New Font (.ttf, .zip)", fontWeight = FontWeight.Bold) },
+                                                onClick = { 
+                                                    fontLauncher.launch("*/*")
+                                                    expandedCust = false 
+                                                },
+                                                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
+                                            )
+                                            if (uiState.availableCustomFonts.isNotEmpty()) {
+                                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                                                 uiState.availableCustomFonts.forEach { font ->
-                                                    DropdownMenuItem(text = { Text(font) }, onClick = {
-                                                        viewModel.setCustomFont(font)
-                                                        expandedCust = false
-                                                    })
+                                                    DropdownMenuItem(
+                                                        text = { Text(font) }, 
+                                                        onClick = {
+                                                            viewModel.setCustomFont(font)
+                                                            expandedCust = false
+                                                        },
+                                                        trailingIcon = { if(uiState.config.customFontName == font) Icon(Icons.Default.Settings, null, modifier = Modifier.size(16.dp)) }
+                                                    )
                                                 }
                                             }
                                         }
@@ -473,19 +495,21 @@ fun EditorScreen(
     }
 }
 
+
+
 @Composable
 fun InteractionPill(text: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .clip(CircleShape)
             .clickable(onClick = onClick),
-        color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     ) {
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelLarge,
-            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else Color.White,
             fontWeight = FontWeight.Bold
         )
     }
@@ -509,7 +533,8 @@ fun SliderItem(label: String, value: Float, range: ClosedFloatingPointRange<Floa
             Text(
                 if (step == 1f) value.toInt().toString() else "%.2f".format(value), 
                 style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface // VISIBILITY FIX
             )
         }
         Slider(

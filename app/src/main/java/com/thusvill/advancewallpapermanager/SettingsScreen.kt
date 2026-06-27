@@ -7,11 +7,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -108,25 +111,49 @@ fun SettingsScreen(
                     modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
                 )
                 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-                        uri?.let { viewModel.importFont(it) }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+                            uri?.let { viewModel.importFont(it) }
+                        }
+                        Button(
+                            onClick = { fontLauncher.launch("*/*") },
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text("Import Font")
+                        }
+                        
+                        OutlinedButton(
+                            onClick = { showFontDeleteDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium,
+                            enabled = uiState.customFonts.isNotEmpty()
+                        ) {
+                            Text("Delete Fonts")
+                        }
                     }
+
+                    // MANUAL GLOBAL SCAN BUTTON
                     Button(
-                        onClick = { fontLauncher.launch("*/*") },
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Text("Import Font")
-                    }
-                    
-                    OutlinedButton(
-                        onClick = { showFontDeleteDialog = true },
-                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.scanConfigsForFonts() },
+                        modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.medium,
-                        enabled = uiState.customFonts.isNotEmpty()
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        enabled = !uiState.isScanning
                     ) {
-                        Text("Delete Fonts")
+                        if (uiState.isScanning) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Scanning All Configs...")
+                        } else {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Detect & Restore All Fonts")
+                        }
                     }
                 }
             }
@@ -252,7 +279,7 @@ fun FontDeleteDialog(
                         modifier = Modifier.weight(1f),
                         enabled = selectedFonts.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        shape = MaterialTheme.shapes.medium
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))

@@ -20,6 +20,10 @@ import java.util.zip.ZipOutputStream
 class ConfigManager(private val context: Context) {
     private val gson = Gson()
     
+    /**
+     * PUBLIC STORAGE: Using Documents folder for user accessibility.
+     * Note: Requires MANAGE_EXTERNAL_STORAGE on Android 11+ to see 'foreign' files.
+     */
     private val configsDir: File by lazy {
         val baseDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
         val appDir = File(baseDir, "AdvanceWallpaperManager/configs")
@@ -76,6 +80,25 @@ class ConfigManager(private val context: Context) {
 
     fun getCustomFontFile(name: String): File {
         return File(customFontsDir, name)
+    }
+
+    /**
+     * Imports a shared .dwp configuration bundle.
+     */
+    fun importConfig(uri: Uri): Boolean {
+        val fileName = getFileName(uri) ?: return false
+        if (!fileName.lowercase().endsWith(".dwp")) return false
+        
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val destFile = File(configsDir, fileName)
+                destFile.outputStream().use { output -> input.copyTo(output) }
+                true
+            } ?: false
+        } catch (e: Exception) {
+            Log.e("ConfigManager", "Failed to import config $fileName", e)
+            false
+        }
     }
 
     private fun getFileName(uri: Uri): String? {
