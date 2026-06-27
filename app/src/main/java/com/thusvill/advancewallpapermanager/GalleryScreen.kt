@@ -1,5 +1,6 @@
 package com.thusvill.advancewallpapermanager
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,20 +16,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.tooling.preview.Preview
 import com.thusvill.advancewallpapermanager.ui.theme.AdvanceWallpaperManagerTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Preview(showBackground = true)
 @Composable
 fun GalleryScreenPreview() {
     AdvanceWallpaperManagerTheme {
-        // Mocking ConfigManager might be hard, but let's see if we can just render the Scaffold
         Scaffold(
             topBar = {
                 MediumTopAppBar(
@@ -121,7 +122,7 @@ fun GalleryScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.padding(paddingValues)
             ) {
-                items(configs) { config ->
+                items(configs, key = { it.id }) { config ->
                     ConfigItem(
                         config = config, 
                         configManager = configManager,
@@ -135,8 +136,13 @@ fun GalleryScreen(
 
 @Composable
 fun ConfigItem(config: WallpaperConfig, configManager: ConfigManager, onClick: () -> Unit) {
-    val previewBitmap = remember(config.id) {
-        configManager.loadBundleBitmap(config.id, "preview")
+    // ASYNC LOADING: Fetch the bitmap in a side effect to keep scrolling smooth
+    var previewBitmap by remember(config.id) { mutableStateOf<Bitmap?>(null) }
+    
+    LaunchedEffect(config.id) {
+        withContext(Dispatchers.IO) {
+            previewBitmap = configManager.loadBundleBitmap(config.id, "preview")
+        }
     }
 
     Card(
@@ -152,7 +158,7 @@ fun ConfigItem(config: WallpaperConfig, configManager: ConfigManager, onClick: (
         Box {
             if (previewBitmap != null) {
                 Image(
-                    bitmap = previewBitmap.asImageBitmap(),
+                    bitmap = previewBitmap!!.asImageBitmap(),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
@@ -162,10 +168,11 @@ fun ConfigItem(config: WallpaperConfig, configManager: ConfigManager, onClick: (
                     modifier = Modifier.fillMaxSize().padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        "No Preview", 
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    // Placeholder while loading
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                     )
                 }
             }

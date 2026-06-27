@@ -366,18 +366,44 @@ class EditorViewModel(application: Application, private val configManager: Confi
 
     private fun generatePreview(): Bitmap? {
         val config = uiState.value.config; val metrics = context.resources.displayMetrics
-        val out = Bitmap.createBitmap(metrics.widthPixels, metrics.heightPixels, Bitmap.Config.ARGB_8888)
+        
+        // DOWNSCALE: Create a lower-res preview for the gallery (e.g., half-screen)
+        val targetWidth = metrics.widthPixels / 2
+        val targetHeight = metrics.heightPixels / 2
+        
+        val out = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out); canvas.drawColor(Color.BLACK)
+        
+        // Scaling factor for coordinates
+        val scaleDown = 0.5f
+        
         synchronized(renderLock) {
             val base = previewBaseBitmap ?: return null
-            val matrix = Matrix(); matrix.postScale(config.wallpaperScale, config.wallpaperScale)
-            matrix.postTranslate(config.wallpaperOffsetX, config.wallpaperOffsetY)
+            val matrix = Matrix()
+            // Apply wallpaper scale, then scale down for preview
+            matrix.postScale(config.wallpaperScale * scaleDown, config.wallpaperScale * scaleDown)
+            matrix.postTranslate(config.wallpaperOffsetX * scaleDown, config.wallpaperOffsetY * scaleDown)
             canvas.drawBitmap(base, matrix, null)
-            previewTimeBitmap?.let { canvas.drawBitmap(it, out.width * config.clockX - it.width / 2f, out.height * config.clockY - it.height / 2f, null) }
-            previewMaskBitmap?.let { canvas.drawBitmap(it, matrix, null) }
+            
+            previewTimeBitmap?.let {
+                val tx = (metrics.widthPixels * config.clockX - it.width / 2f) * scaleDown
+                val ty = (metrics.heightPixels * config.clockY - it.height / 2f) * scaleDown
+                
+                val clockMatrix = Matrix()
+                clockMatrix.postScale(scaleDown, scaleDown)
+                clockMatrix.postTranslate(tx, ty)
+                canvas.drawBitmap(it, clockMatrix, null)
+            }
+            
+            previewMaskBitmap?.let {
+                val maskMatrix = Matrix()
+                maskMatrix.postScale(config.wallpaperScale * scaleDown, config.wallpaperScale * scaleDown)
+                maskMatrix.postTranslate(config.wallpaperOffsetX * scaleDown, config.wallpaperOffsetY * scaleDown)
+                canvas.drawBitmap(it, maskMatrix, null)
+            }
         }
-        val thumb = Bitmap.createScaledBitmap(out, out.width / 2, out.height / 2, true)
-        out.recycle(); return thumb
+        
+        return out
     }
 
     fun onSurfaceCreated(surface: Surface) { lastSurface = surface; requestPreviewUpdate() }
