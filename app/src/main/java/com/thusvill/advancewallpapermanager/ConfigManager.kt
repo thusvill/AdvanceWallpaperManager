@@ -25,8 +25,12 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Environment
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.google.gson.Gson
 import java.io.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -48,6 +52,12 @@ class ConfigManager(private val context: Context) {
 
     private val customFontsDir: File by lazy {
         val dir = File(context.filesDir, "custom_fonts")
+        if (!dir.exists()) dir.mkdirs()
+        dir
+    }
+
+    private val exportDir: File by lazy {
+        val dir = File(context.cacheDir, "exports")
         if (!dir.exists()) dir.mkdirs()
         dir
     }
@@ -90,25 +100,27 @@ class ConfigManager(private val context: Context) {
         if (!fileName.lowercase().endsWith(".dwp")) return false
         return try {
             context.contentResolver.openInputStream(uri)?.use { input ->
-                val destFile = File(configsDir, fileName)
-                destFile.outputStream().use { output -> input.copyTo(output) }
+                val data = input.readBytes()
+                val config = readConfigFromBundleBytes(data) ?: return false
+                importBundleBytes(data, config)
                 true
             } ?: false
         } catch (e: Exception) { Log.e(TAG, "Failed to import config $fileName", e); false }
     }
 
-    private fun getFileName(uri: Uri): String? {
+    fun getFileName(uri: Uri): String? {
         return context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
             if (cursor.moveToFirst()) cursor.getString(index) else null
-        }
+        } ?: uri.lastPathSegment?.substringAfterLast('/')
     }
 
     fun saveBundle(config: WallpaperConfig, baseBitmap: Bitmap?, maskBitmap: Bitmap?, previewBitmap: Bitmap?, customFontName: String? = null): String {
-        // ID-FILENAME SYNC: Ensure internal ID matches the file being written
         val id = if (config.id == "default" || config.id.isEmpty()) UUID.randomUUID().toString() else config.id
         config.id = id
-        val bundleFile = File(configsDir, "$id.dwp")
+        if (config.displayName.isBlank()) config.displayName = "Wallpaper ${id.take(8)}"
+        val existingFile = findBundleFileById(id)
+        val bundleFile = uniqueConfigFile(config.displayName, existingFile)
         try {
             val fos = FileOutputStream(bundleFile)
             ZipOutputStream(fos).use { zos ->
@@ -146,32 +158,19 @@ class ConfigManager(private val context: Context) {
         zos.closeEntry()
     }
 
-    /**
-     * FLEXIBLE BUNDLE LOADER: Forces internal ID to match the actual filename.
-     */
     fun loadBundleConfig(id: String): WallpaperConfig? {
-        val file = File(configsDir, "$id.dwp")
+        val file = findBundleFileById(id)
         if (!file.exists()) return null
         return try {
-            ZipInputStream(FileInputStream(file)).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    if (entry.name.lowercase().endsWith("config.json")) {
-                        val reader = InputStreamReader(zis)
-                        val config = gson.fromJson(reader, WallpaperConfig::class.java)
-                        // STABILITY FIX: Always overwrite ID with the filename to prevent render failures
-                        if (config != null) config.id = id 
-                        return config
-                    }
-                    entry = zis.nextEntry
-                }
-                null
+            readConfigFromBundleFile(file)?.also {
+                if (it.id.isBlank() || it.id == "default") it.id = id
+                if (it.displayName.isBlank()) it.displayName = file.nameWithoutExtension
             }
         } catch (e: Exception) { Log.e(TAG, "Error loading config from bundle $id", e); null }
     }
 
     fun loadBundleBitmap(id: String, type: String): Bitmap? {
-        val file = File(configsDir, "$id.dwp")
+        val file = findBundleFileById(id)
         if (!file.exists()) return null
         val target = type.lowercase() + ".png" // Robust matching
         
@@ -222,7 +221,7 @@ class ConfigManager(private val context: Context) {
     }
 
     fun loadBundleFile(id: String, fileName: String): ByteArray? {
-        val file = File(configsDir, "$id.dwp")
+        val file = findBundleFileById(id)
         if (!file.exists()) return null
         return try {
             ZipInputStream(FileInputStream(file)).use { zis ->
@@ -247,17 +246,135 @@ class ConfigManager(private val context: Context) {
         val files = configsDir.listFiles() ?: return emptyList()
         files.filter { it.name.endsWith(".dwp") }.forEach { file ->
             try {
-                loadBundleConfig(file.nameWithoutExtension)?.let { list.add(it) }
+                readConfigFromBundleFile(file)?.let { config ->
+                    if (config.id.isBlank() || config.id == "default") config.id = file.nameWithoutExtension
+                    if (config.displayName.isBlank()) config.displayName = file.nameWithoutExtension
+                    list.add(config)
+                }
             } catch (e: Exception) { Log.e(TAG, "Corrupt bundle: ${file.name}", e) }
         }
-        return list
+        return list.sortedBy { it.displayName.lowercase() }
     }
 
     fun deleteConfig(id: String) {
-        val file = File(configsDir, "$id.dwp")
+        val file = findBundleFileById(id)
         if (file.exists()) file.delete()
         val tempFont = getFontTempFile(id)
         if (tempFont.exists()) tempFont.delete()
+    }
+
+    fun exportConfigsAsDwps(ids: Set<String>): Uri? {
+        val selected = loadAllConfigs().filter { ids.contains(it.id) }
+        if (selected.isEmpty()) return null
+        val exportName = if (selected.size == 1) selected.first().displayName else "Depth Wallpapers ${timestamp()}"
+        val outFile = File(exportDir, "${sanitizeFileName(exportName)}.dwps")
+        return try {
+            ZipOutputStream(FileOutputStream(outFile)).use { zos ->
+                val exportItems = selected.map { config ->
+                    config to "configs/${sanitizeFileName(config.displayName)}-${config.id.take(8)}.dwp"
+                }
+                val manifest = BundleManifest(
+                    version = 1,
+                    configs = exportItems.map { (config, path) -> BundleManifestItem(config.id, config.displayName, path) }
+                )
+                zos.putNextEntry(ZipEntry("manifest.json"))
+                zos.write(gson.toJson(manifest).toByteArray())
+                zos.closeEntry()
+                exportItems.forEach { (config, path) ->
+                    val source = findBundleFileById(config.id)
+                    if (source.exists()) {
+                        zos.putNextEntry(ZipEntry(path))
+                        source.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
+                }
+            }
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", outFile)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to export .dwps", e)
+            null
+        }
+    }
+
+    fun createShareIntent(uri: Uri): Intent {
+        return Intent(Intent.ACTION_SEND).apply {
+            type = "application/x-dwps"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    fun inspectSerializedConfigs(uri: Uri): List<ImportableConfig> {
+        val fileName = getFileName(uri).orEmpty().lowercase()
+        return try {
+            if (fileName.endsWith(".dwp")) {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    val data = input.readBytes()
+                    readConfigFromBundleBytes(data)?.let {
+                        if (it.displayName.isBlank()) it.displayName = getFileName(uri)?.substringBeforeLast('.') ?: it.id.take(8)
+                        listOf(ImportableConfig("single.dwp", it.id, it.displayName))
+                    }
+                } ?: emptyList()
+            } else {
+                val items = mutableListOf<ImportableConfig>()
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    ZipInputStream(input).use { zis ->
+                        var entry = zis.nextEntry
+                        while (entry != null) {
+                            if (!entry.isDirectory && entry.name.lowercase().endsWith(".dwp")) {
+                                val data = zis.readBytes()
+                                readConfigFromBundleBytes(data)?.let { config ->
+                                    val name = config.displayName.ifBlank { File(entry.name).nameWithoutExtension }
+                                    items.add(ImportableConfig(entry.name, config.id, name))
+                                }
+                            }
+                            entry = zis.nextEntry
+                        }
+                    }
+                }
+                items
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inspect serialized configs", e)
+            emptyList()
+        }
+    }
+
+    fun importSerializedConfigs(uri: Uri, entryNames: Set<String>): Int {
+        val fileName = getFileName(uri).orEmpty().lowercase()
+        return try {
+            if (fileName.endsWith(".dwp")) {
+                if (!entryNames.contains("single.dwp")) return 0
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    val data = input.readBytes()
+                    val config = readConfigFromBundleBytes(data) ?: return 0
+                    importBundleBytes(data, config)
+                    1
+                } ?: 0
+            } else {
+                var imported = 0
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    ZipInputStream(input).use { zis ->
+                        var entry = zis.nextEntry
+                        while (entry != null) {
+                            if (!entry.isDirectory && entryNames.contains(entry.name)) {
+                                val data = zis.readBytes()
+                                val config = readConfigFromBundleBytes(data)
+                                if (config != null) {
+                                    importBundleBytes(data, config)
+                                    imported++
+                                }
+                            }
+                            entry = zis.nextEntry
+                        }
+                    }
+                }
+                imported
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import serialized configs", e)
+            0
+        }
     }
 
     fun getActiveConfigId(): String? = context.getSharedPreferences("wallpaper_prefs", Context.MODE_PRIVATE).getString("active_config_id", null)
@@ -267,4 +384,100 @@ class ConfigManager(private val context: Context) {
         intent.setPackage(context.packageName)
         context.sendBroadcast(intent)
     }
+
+    private fun importBundleBytes(data: ByteArray, incomingConfig: WallpaperConfig) {
+        if (incomingConfig.id.isBlank() || incomingConfig.id == "default" || findBundleFileById(incomingConfig.id).exists()) {
+            incomingConfig.id = UUID.randomUUID().toString()
+        }
+        if (incomingConfig.displayName.isBlank()) incomingConfig.displayName = incomingConfig.id.take(8)
+        val destFile = uniqueConfigFile(incomingConfig.displayName, null)
+        ZipInputStream(ByteArrayInputStream(data)).use { zis ->
+            ZipOutputStream(FileOutputStream(destFile)).use { zos ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory) {
+                        zos.putNextEntry(ZipEntry(entry.name))
+                        if (entry.name.lowercase().endsWith("config.json")) {
+                            zos.write(gson.toJson(incomingConfig).toByteArray())
+                        } else {
+                            zis.copyTo(zos)
+                        }
+                        zos.closeEntry()
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+        }
+    }
+
+    private fun findBundleFileById(id: String): File {
+        val direct = File(configsDir, "$id.dwp")
+        if (direct.exists()) return direct
+        val files = configsDir.listFiles()?.filter { it.name.endsWith(".dwp") } ?: emptyList()
+        return files.firstOrNull { file ->
+            try { readConfigFromBundleFile(file)?.id == id } catch (_: Exception) { false }
+        } ?: direct
+    }
+
+    private fun readConfigFromBundleFile(file: File): WallpaperConfig? {
+        return file.inputStream().use { readConfigFromBundleStream(it) }
+    }
+
+    private fun readConfigFromBundleBytes(data: ByteArray): WallpaperConfig? {
+        return ByteArrayInputStream(data).use { readConfigFromBundleStream(it) }
+    }
+
+    private fun readConfigFromBundleStream(input: InputStream): WallpaperConfig? {
+        ZipInputStream(input).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                if (entry.name.lowercase().endsWith("config.json")) {
+                    return gson.fromJson(InputStreamReader(zis), WallpaperConfig::class.java)
+                }
+                entry = zis.nextEntry
+            }
+        }
+        return null
+    }
+
+    private fun uniqueConfigFile(displayName: String, currentFile: File?): File {
+        val base = sanitizeFileName(displayName.ifBlank { "Wallpaper" })
+        var candidate = File(configsDir, "$base.dwp")
+        if (currentFile != null && candidate.absolutePath == currentFile.absolutePath) return candidate
+        var index = 2
+        while (candidate.exists()) {
+            candidate = File(configsDir, "$base ($index).dwp")
+            if (currentFile != null && candidate.absolutePath == currentFile.absolutePath) return candidate
+            index++
+        }
+        if (currentFile != null && currentFile.exists() && currentFile.absolutePath != candidate.absolutePath) currentFile.delete()
+        return candidate
+    }
+
+    private fun sanitizeFileName(name: String): String {
+        return name.trim()
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .replace(Regex("\\s+"), " ")
+            .take(80)
+            .ifBlank { "Wallpaper" }
+    }
+
+    private fun timestamp(): String = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
 }
+
+data class ImportableConfig(
+    val entryName: String,
+    val id: String,
+    val displayName: String
+)
+
+private data class BundleManifest(
+    val version: Int,
+    val configs: List<BundleManifestItem>
+)
+
+private data class BundleManifestItem(
+    val id: String,
+    val displayName: String,
+    val path: String
+)

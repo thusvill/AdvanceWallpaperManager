@@ -23,10 +23,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -100,13 +103,16 @@ fun GalleryScreenPreview() {
 fun GalleryScreen(
     configManager: ConfigManager,
     onNavigateToEditor: (String?) -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToImport: (Uri) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var configs by remember { mutableStateOf(emptyList<WallpaperConfig>()) }
+    var selectedConfigIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val scope = rememberCoroutineScope()
+    val isSelectionMode = selectedConfigIds.isNotEmpty()
 
     // STABILITY FIX: Safe permission check
     var hasFullAccess by remember {
@@ -153,31 +159,44 @@ fun GalleryScreen(
     }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val success = configManager.importConfig(it)
-                    if (success) {
-                        refreshConfigs()
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("GalleryScreen", "Import failed", e)
-                }
-            }
-        }
+        uri?.let { onNavigateToImport(it) }
     }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             MediumTopAppBar(
-                title = { Text("Depth Wallpapers") },
+                title = { Text(if (isSelectionMode) "${selectedConfigIds.size} selected" else "Depth Wallpapers") },
                 actions = {
+                    if (isSelectionMode) {
+                        IconButton(
+                            onClick = {
+                                scope.launch(Dispatchers.IO) {
+                                    val uri = configManager.exportConfigsAsDwps(selectedConfigIds)
+                                    withContext(Dispatchers.Main) {
+                                        if (uri != null) {
+                                            val shareIntent = Intent.createChooser(configManager.createShareIntent(uri), "Share wallpapers")
+                                            context.startActivity(shareIntent)
+                                            selectedConfigIds = emptySet()
+                                        } else {
+                                            Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Share Selected")
+                        }
+                        IconButton(onClick = { selectedConfigIds = emptySet() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear Selection")
+                        }
+                    } else {
                     IconButton(onClick = { importLauncher.launch("*/*") }) {
                         Icon(Icons.Default.AddCircle, contentDescription = "Import Config")
                     }
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
                     }
                 },
                 scrollBehavior = scrollBehavior
@@ -235,7 +254,22 @@ fun GalleryScreen(
                         ConfigItem(
                             config = config, 
                             configManager = configManager,
-                            onClick = { onNavigateToEditor(config.id) }
+                            isSelected = selectedConfigIds.contains(config.id),
+                            selectionMode = isSelectionMode,
+                            onClick = {
+                                if (isSelectionMode) {
+                                    selectedConfigIds = if (selectedConfigIds.contains(config.id)) {
+                                        selectedConfigIds - config.id
+                                    } else {
+                                        selectedConfigIds + config.id
+                                    }
+                                } else {
+                                    onNavigateToEditor(config.id)
+                                }
+                            },
+                            onLongClick = {
+                                selectedConfigIds = selectedConfigIds + config.id
+                            }
                         )
                     }
                 }
@@ -275,8 +309,16 @@ fun PermissionBanner(onGrant: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ConfigItem(config: WallpaperConfig, configManager: ConfigManager, onClick: () -> Unit) {
+fun ConfigItem(
+    config: WallpaperConfig,
+    configManager: ConfigManager,
+    isSelected: Boolean,
+    selectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
     var previewBitmap by remember(config.id) { mutableStateOf<Bitmap?>(null) }
     
     LaunchedEffect(config.id) {
@@ -293,10 +335,10 @@ fun ConfigItem(config: WallpaperConfig, configManager: ConfigManager, onClick: (
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.7f)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         Box {
@@ -319,13 +361,23 @@ fun ConfigItem(config: WallpaperConfig, configManager: ConfigManager, onClick: (
                     )
                 }
             }
+
+            if (selectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                )
+            }
             
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.7f),
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             ) {
                 Text(
-                    text = config.id.take(8),
+                    text = config.displayName.ifBlank { config.id.take(8) },
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelMedium,

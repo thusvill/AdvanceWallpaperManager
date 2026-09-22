@@ -22,6 +22,7 @@ import android.os.Parcelable
 
 data class WallpaperConfig(
     var id: String = "default",
+    var displayName: String = "",
     var clockX: Float = 0.5f,
     var clockY: Float = 0.4f,
     var fontSize: Float = 200f,
@@ -56,6 +57,7 @@ data class WallpaperConfig(
 ) : Parcelable {
     constructor(parcel: Parcel) : this(
         parcel.readString() ?: "default",
+        parcel.readString() ?: "",
         parcel.readFloat(),
         parcel.readFloat(),
         parcel.readFloat(),
@@ -91,6 +93,7 @@ data class WallpaperConfig(
 
     override fun writeToParcel(parcel: Parcel, flags: Int) {
         parcel.writeString(id)
+        parcel.writeString(displayName)
         parcel.writeFloat(clockX)
         parcel.writeFloat(clockY)
         parcel.writeFloat(fontSize)

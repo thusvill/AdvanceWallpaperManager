@@ -132,10 +132,14 @@ class EditorViewModel(application: Application, private val configManager: Confi
         cachedAiMask = null; cachedAiMode = null
         viewModelScope.launch(Dispatchers.IO) {
             val bitmap = loadRaw(uri)
+            val imageName = configManager.getFileName(uri)?.substringBeforeLast('.') ?: ""
             synchronized(renderLock) {
                 previewBaseBitmap?.recycle(); previewMaskBitmap?.recycle()
                 previewBaseBitmap = bitmap
                 previewMaskBitmap = null
+            }
+            if (uiState.value.config.displayName.isBlank() && imageName.isNotBlank()) {
+                _uiState.update { it.copy(config = it.config.copy(displayName = imageName)) }
             }
             updateTimeBitmap()
             requestPreviewUpdate()
@@ -216,6 +220,10 @@ class EditorViewModel(application: Application, private val configManager: Confi
             oldConfig.mlKitExpansionPx != finalConfig.mlKitExpansionPx || oldConfig.deepLabTargetClassIndex != finalConfig.deepLabTargetClassIndex) {
             scheduleMaskRecalculation()
         }
+    }
+
+    fun setDisplayName(name: String) {
+        _uiState.update { it.copy(config = it.config.copy(displayName = name)) }
     }
 
     private fun scheduleMaskRecalculation() {

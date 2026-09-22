@@ -615,6 +615,14 @@ fun EditorScreen(
                                     }
                                 }
                                 4 -> { // Apply
+                                    OutlinedTextField(
+                                        value = uiState.config.displayName,
+                                        onValueChange = viewModel::setDisplayName,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text("Config name") },
+                                        singleLine = true
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
                                     Button(
                                         onClick = { viewModel.applyConfig(onBack) },
                                         modifier = Modifier.fillMaxWidth(),

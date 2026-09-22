@@ -17,7 +17,9 @@
 
 package com.thusvill.advancewallpapermanager
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -27,8 +29,17 @@ import androidx.navigation.navArgument
 @Composable
 fun AppNavGraph(
     navController: NavHostController,
-    configManager: ConfigManager
+    configManager: ConfigManager,
+    initialImportUri: Uri? = null,
+    onInitialImportUriHandled: () -> Unit = {}
 ) {
+    LaunchedEffect(initialImportUri) {
+        initialImportUri?.let {
+            navController.navigate("import/${Uri.encode(it.toString())}")
+            onInitialImportUriHandled()
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = "gallery"
@@ -45,6 +56,9 @@ fun AppNavGraph(
                 },
                 onNavigateToSettings = {
                     navController.navigate("settings")
+                },
+                onNavigateToImport = { uri ->
+                    navController.navigate("import/${Uri.encode(uri.toString())}")
                 }
             )
         }
@@ -63,6 +77,20 @@ fun AppNavGraph(
             SettingsScreen(
                 configManager = configManager,
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = "import/{uri}",
+            arguments = listOf(navArgument("uri") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val rawUri = backStackEntry.arguments?.getString("uri").orEmpty()
+            ImportScreen(
+                uri = Uri.parse(Uri.decode(rawUri)),
+                configManager = configManager,
+                onBack = { navController.popBackStack() },
+                onImported = {
+                    navController.popBackStack("gallery", inclusive = false)
+                }
             )
         }
     }

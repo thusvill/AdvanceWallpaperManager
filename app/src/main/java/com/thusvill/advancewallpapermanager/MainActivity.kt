@@ -18,32 +18,53 @@
 package com.thusvill.advancewallpapermanager
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.setValue
 import androidx.navigation.compose.rememberNavController
 import com.thusvill.advancewallpapermanager.ui.theme.AdvanceWallpaperManagerTheme
 
 class MainActivity : ComponentActivity() {
+    private var importUriState = mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        importUriState.value = extractImportUri(intent)
         
         val configManager = ConfigManager(this)
         
         setContent {
             AdvanceWallpaperManagerTheme {
                 val navController = rememberNavController()
+                var initialImportUri by remember { importUriState }
                 AppNavGraph(
                     navController = navController,
-                    configManager = configManager
+                    configManager = configManager,
+                    initialImportUri = initialImportUri,
+                    onInitialImportUriHandled = { initialImportUri = null }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        importUriState.value = extractImportUri(intent)
+    }
+
+    private fun extractImportUri(intent: Intent?): Uri? {
+        return when (intent?.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            else -> null
         }
     }
 }
