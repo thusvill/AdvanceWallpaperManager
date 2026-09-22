@@ -8,6 +8,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -27,8 +29,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -521,25 +530,69 @@ fun EditorScreen(
                                     Spacer(modifier = Modifier.height(16.dp))
                                     SectionTitle("Clock Color")
                                     
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                                    var showColorPicker by remember { mutableStateOf(false) }
+
+                                    if (showColorPicker) {
+                                        ColorPickerDialog(
+                                            initialColor = Color(uiState.config.fontColor),
+                                            onColorSelected = { selectedColor ->
+                                                viewModel.updateConfig { it.copy(fontColor = selectedColor.toArgb()) }
+                                            },
+                                            onDismiss = { showColorPicker = false }
+                                        )
+                                    }
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
                                         FilledTonalButton(
                                             onClick = { viewModel.autoDetectColor() }, 
                                             modifier = Modifier.weight(1f),
                                             shape = MaterialTheme.shapes.medium
                                         ) {
-                                            Text("Auto Color", fontSize = 12.sp)
+                                            Text("Auto", fontSize = 12.sp)
                                         }
-                                        Spacer(modifier = Modifier.width(12.dp))
+
                                         val colors = listOf(Color.White, Color.Black, Color.Red, Color.Cyan, Color.Yellow, Color.Green, Color.Magenta)
                                         colors.forEach { color ->
+                                            val isSelected = uiState.config.fontColor == color.toArgb()
                                             Box(
                                                 modifier = Modifier
-                                                    .size(32.dp)
-                                                    .padding(2.dp)
+                                                    .size(28.dp)
                                                     .clip(CircleShape)
                                                     .background(color)
-                                                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                                    .border(
+                                                        if (isSelected) 2.dp else 1.dp,
+                                                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                                        CircleShape
+                                                    )
                                                     .clickable { viewModel.updateConfig { it.copy(fontColor = color.toArgb()) } }
+                                            )
+                                        }
+
+                                        // Rainbow Custom Color Picker Trigger
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    Brush.sweepGradient(
+                                                        listOf(
+                                                            Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red
+                                                        )
+                                                    )
+                                                )
+                                                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                                .clickable { showColorPicker = true },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Settings,
+                                                contentDescription = "Custom Color Picker",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(14.dp)
                                             )
                                         }
                                     }
@@ -620,4 +673,220 @@ fun SliderItem(label: String, value: Float, range: ClosedFloatingPointRange<Floa
             steps = if (step > 0) ((range.endInclusive - range.start) / step).toInt() - 1 else 0
         )
     }
+}
+
+@Composable
+fun ColorWheelPicker(
+    hue: Float,
+    saturation: Float,
+    onHueSaturationChanged: (hue: Float, saturation: Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var sizePx by remember { mutableFloatStateOf(0f) }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val cx = sizePx / 2f
+                    val cy = sizePx / 2f
+                    val dx = offset.x - cx
+                    val dy = offset.y - cy
+                    val r = minOf(cx, sqrt(dx * dx + dy * dy))
+                    val angle = (Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 360f) % 360f
+                    val sat = if (cx > 0f) (r / cx).coerceIn(0f, 1f) else 0f
+                    onHueSaturationChanged(angle, sat)
+                }
+            }
+            .pointerInput(Unit) {
+                detectDragGestures { change, _ ->
+                    change.consume()
+                    val cx = sizePx / 2f
+                    val cy = sizePx / 2f
+                    val dx = change.position.x - cx
+                    val dy = change.position.y - cy
+                    val r = minOf(cx, sqrt(dx * dx + dy * dy))
+                    val angle = (Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 360f) % 360f
+                    val sat = if (cx > 0f) (r / cx).coerceIn(0f, 1f) else 0f
+                    onHueSaturationChanged(angle, sat)
+                }
+            }
+    ) {
+        sizePx = size.width
+        val radius = size.width / 2f
+
+        // Draw Hue Sweep
+        drawCircle(
+            brush = Brush.sweepGradient(
+                listOf(
+                    Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red
+                )
+            ),
+            radius = radius
+        )
+
+        // Overlay Saturation (White in center)
+        drawCircle(
+            brush = Brush.radialGradient(
+                listOf(Color.White, Color.Transparent),
+                center = Offset(radius, radius),
+                radius = radius
+            ),
+            radius = radius
+        )
+
+        // Draw Selector Thumb
+        val angleRad = Math.toRadians(hue.toDouble())
+        val thumbDist = saturation * radius
+        val thumbX = radius + (thumbDist * cos(angleRad)).toFloat()
+        val thumbY = radius + (thumbDist * sin(angleRad)).toFloat()
+
+        drawCircle(
+            color = Color.White,
+            radius = 12.dp.toPx(),
+            center = Offset(thumbX, thumbY)
+        )
+        drawCircle(
+            color = Color.hsv(hue, saturation, 1f),
+            radius = 8.dp.toPx(),
+            center = Offset(thumbX, thumbY)
+        )
+        drawCircle(
+            color = Color.Black,
+            radius = 12.dp.toPx(),
+            center = Offset(thumbX, thumbY),
+            style = Stroke(width = 2.dp.toPx())
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ColorPickerDialog(
+    initialColor: Color,
+    onColorSelected: (Color) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val initialHsv = remember(initialColor) {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(initialColor.toArgb(), hsv)
+        hsv
+    }
+
+    var hue by remember { mutableFloatStateOf(initialHsv[0]) }
+    var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
+    var value by remember { mutableFloatStateOf(if (initialHsv[2] < 0.05f) 1f else initialHsv[2]) }
+
+    val currentColor = remember(hue, saturation, value) {
+        Color.hsv(hue, saturation, value)
+    }
+
+    val hexText = remember(currentColor) {
+        val argb = currentColor.toArgb()
+        "#%02X%02X%02X".format(
+            android.graphics.Color.red(argb),
+            android.graphics.Color.green(argb),
+            android.graphics.Color.blue(argb)
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose Clock Color", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Live Color Preview
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(currentColor)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val r = android.graphics.Color.red(currentColor.toArgb()) / 255f
+                    val g = android.graphics.Color.green(currentColor.toArgb()) / 255f
+                    val b = android.graphics.Color.blue(currentColor.toArgb()) / 255f
+                    val isLight = (r * 0.299f + g * 0.587f + b * 0.114f) > 0.5f
+                    Text(
+                        text = hexText,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isLight) Color.Black else Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Interactive Color Wheel Circle Picker
+                ColorWheelPicker(
+                    hue = hue,
+                    saturation = saturation,
+                    onHueSaturationChanged = { newHue, newSat ->
+                        hue = newHue
+                        saturation = newSat
+                    },
+                    modifier = Modifier
+                        .size(180.dp)
+                        .padding(4.dp)
+                )
+
+                // Brightness / Value Slider
+                SliderItem(
+                    label = "Brightness (${(value * 100).toInt()}%)",
+                    value = value,
+                    range = 0f..1f,
+                    onValueChange = { value = it }
+                )
+
+                // Swatches
+                Text("Preset Swatches", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val swatches = listOf(
+                        Color(0xFFFFFFFF), Color(0xFF000000), Color(0xFFF44336), Color(0xFFE91E63),
+                        Color(0xFF9C27B0), Color(0xFF673AB7), Color(0xFF3F51B5), Color(0xFF2196F3),
+                        Color(0xFF00BCD4), Color(0xFF009688), Color(0xFF4CAF50), Color(0xFFFFEB3B),
+                        Color(0xFFFF9800), Color(0xFFFF5722)
+                    )
+                    swatches.forEach { swatch ->
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(swatch)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                .clickable {
+                                    val hsv = FloatArray(3)
+                                    android.graphics.Color.colorToHSV(swatch.toArgb(), hsv)
+                                    hue = hsv[0]
+                                    saturation = hsv[1]
+                                    value = hsv[2]
+                                }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                onColorSelected(currentColor)
+                onDismiss()
+            }) {
+                Text("Select")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
