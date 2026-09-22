@@ -20,6 +20,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 
 class EditorViewModel(application: Application, private val configManager: ConfigManager) : AndroidViewModel(application) {
     private val context = application
@@ -140,7 +141,7 @@ class EditorViewModel(application: Application, private val configManager: Confi
         val finalScale = scale * coverScale
         val offsetX = (screenW - original.width * finalScale) / 2f
         val offsetY = (screenH - original.height * finalScale) / 2f
-        _uiState.update { it.copy(config = it.config.copy(wallpaperScale = finalScale, wallpaperOffsetX = offsetX, wallpaperOffsetY = offsetY)) }
+        _uiState.update { it.copy(config = it.config.copy(wallpaperScale = finalScale, wallpaperOffsetX = offsetX, wallpaperOffsetY = offsetY, wallpaperRotation = 0f)) }
         return if (scale < 1.0f) {
             val scaled = Bitmap.createScaledBitmap(original, (original.width * scale).toInt(), (original.height * scale).toInt(), true)
             original.recycle(); scaled
@@ -194,7 +195,8 @@ class EditorViewModel(application: Application, private val configManager: Confi
         }
         requestPreviewUpdate()
         if (oldConfig.saliencyThreshold != finalConfig.saliencyThreshold || oldConfig.saliencyFeatherRadius != finalConfig.saliencyFeatherRadius ||
-            oldConfig.mlKitFeatherRadius != finalConfig.mlKitFeatherRadius || oldConfig.deepLabTargetClassIndex != finalConfig.deepLabTargetClassIndex) {
+            oldConfig.mlKitFeatherRadius != finalConfig.mlKitFeatherRadius || oldConfig.mlKitThreshold != finalConfig.mlKitThreshold ||
+            oldConfig.mlKitExpansionPx != finalConfig.mlKitExpansionPx || oldConfig.deepLabTargetClassIndex != finalConfig.deepLabTargetClassIndex) {
             scheduleMaskRecalculation()
         }
     }
@@ -246,7 +248,7 @@ class EditorViewModel(application: Application, private val configManager: Confi
                     val aiMask = getAiMask(mode, base)
                     if (aiMask != null) {
                         val out = Bitmap.createBitmap(base.width, base.height, Bitmap.Config.ARGB_8888)
-                        NativeLib.extractSaliencyMatteNative(base, aiMask.buffer, aiMask.width, aiMask.height, out, 0.5f, config.mlKitFeatherRadius, 2, 0.5f)
+                        NativeLib.extractMlKitSubjectNative(base, aiMask.buffer, aiMask.width, aiMask.height, out, config.mlKitThreshold, config.mlKitFeatherRadius, config.mlKitExpansionPx)
                         out
                     } else null
                 }
@@ -265,8 +267,15 @@ class EditorViewModel(application: Application, private val configManager: Confi
             ExtractionMode.MLKIT_SUBJECT -> getMlKitSegmenter()
             else -> getSelfieSegmenter()
         }
-        val mask = segmenter.segment(base)
-        cachedAiMask = mask; cachedAiMode = mode
+        var mask = segmenter.segment(base)
+        if (mask == null && mode != ExtractionMode.MLKIT_SUBJECT) {
+            Log.w(TAG, "TFLite model extraction returned null for $mode. Falling back to ML Kit Subject Segmenter.")
+            mask = getMlKitSegmenter().segment(base)
+        }
+        if (mask != null) {
+            cachedAiMask = mask
+            cachedAiMode = mode
+        }
         return mask
     }
 
@@ -395,9 +404,17 @@ class EditorViewModel(application: Application, private val configManager: Confi
         
         synchronized(renderLock) {
             val base = previewBaseBitmap ?: return null
+            val baseW = base.width.toFloat()
+            val baseH = base.height.toFloat()
+            
             val matrix = Matrix()
-            // Apply wallpaper scale, then scale down for preview
+            // Apply wallpaper scale, rotation around scaled center, then translation for preview
             matrix.postScale(config.wallpaperScale * scaleDown, config.wallpaperScale * scaleDown)
+            matrix.postRotate(
+                config.wallpaperRotation,
+                (baseW * config.wallpaperScale / 2f) * scaleDown,
+                (baseH * config.wallpaperScale / 2f) * scaleDown
+            )
             matrix.postTranslate(config.wallpaperOffsetX * scaleDown, config.wallpaperOffsetY * scaleDown)
             canvas.drawBitmap(base, matrix, null)
             
@@ -406,6 +423,7 @@ class EditorViewModel(application: Application, private val configManager: Confi
                 val ty = (metrics.heightPixels * config.clockY - it.height / 2f) * scaleDown
                 
                 val clockMatrix = Matrix()
+                clockMatrix.postRotate(config.clockRotation, it.width / 2f, it.height / 2f)
                 clockMatrix.postScale(scaleDown, scaleDown)
                 clockMatrix.postTranslate(tx, ty)
                 canvas.drawBitmap(it, clockMatrix, null)
@@ -414,6 +432,11 @@ class EditorViewModel(application: Application, private val configManager: Confi
             previewMaskBitmap?.let {
                 val maskMatrix = Matrix()
                 maskMatrix.postScale(config.wallpaperScale * scaleDown, config.wallpaperScale * scaleDown)
+                maskMatrix.postRotate(
+                    config.wallpaperRotation,
+                    (baseW * config.wallpaperScale / 2f) * scaleDown,
+                    (baseH * config.wallpaperScale / 2f) * scaleDown
+                )
                 maskMatrix.postTranslate(config.wallpaperOffsetX * scaleDown, config.wallpaperOffsetY * scaleDown)
                 canvas.drawBitmap(it, maskMatrix, null)
             }
@@ -429,22 +452,57 @@ class EditorViewModel(application: Application, private val configManager: Confi
         if (surface.isValid) {
             val config = uiState.value.config
             synchronized(renderLock) {
-                NativeLib.renderNativeFrame(surface, "", previewBaseBitmap, previewMaskBitmap, previewTimeBitmap, config.clockX, config.clockY, config.wallpaperScale, config.wallpaperOffsetX, config.wallpaperOffsetY)
+                NativeLib.renderNativeFrame(surface, "", previewBaseBitmap, previewMaskBitmap, previewTimeBitmap, config.clockX, config.clockY, config.wallpaperScale, config.wallpaperOffsetX, config.wallpaperOffsetY, config.wallpaperRotation, config.clockRotation, config.clockDepth)
             }
         }
     }
 
-    fun handleClockDragDelta(dx: Float, dy: Float, viewWidth: Float, viewHeight: Float) {
-        _uiState.update { it.copy(config = it.config.copy(clockX = (it.config.clockX + dx / viewWidth).coerceIn(0f, 1f), clockY = (it.config.clockY + dy / viewHeight).coerceIn(0f, 1f))) }
+    fun handleClockTransform(dx: Float, dy: Float, zoom: Float, rotationChange: Float, viewWidth: Float, viewHeight: Float) {
+        val oldFontSize = uiState.value.config.fontSize
+        val newFontSize = (oldFontSize * zoom).coerceAtLeast(10f)
+        val fontChanged = abs(oldFontSize - newFontSize) > 0.1f
+
+        _uiState.update {
+            val rawRotation = it.config.clockRotation + rotationChange
+            val newRotation = (rawRotation % 360f + 360f) % 360f
+            val newClockX = (it.config.clockX + dx / viewWidth).coerceIn(0f, 1f)
+            val newClockY = (it.config.clockY + dy / viewHeight).coerceIn(0f, 1f)
+            it.copy(config = it.config.copy(
+                clockX = newClockX,
+                clockY = newClockY,
+                fontSize = newFontSize,
+                clockRotation = newRotation
+            ))
+        }
+        if (fontChanged) {
+            updateTimeBitmap()
+        }
         requestPreviewUpdate()
     }
 
-    fun handleWallpaperTransform(dx: Float, dy: Float, zoom: Float, viewWidth: Float, viewHeight: Float) {
+    fun handleWallpaperTransform(dx: Float, dy: Float, zoom: Float, rotationChange: Float, viewWidth: Float, viewHeight: Float) {
         _uiState.update {
-            val newScale = (it.config.wallpaperScale * zoom).coerceIn(0.5f, 10.0f)
-            it.copy(config = it.config.copy(wallpaperScale = newScale, wallpaperOffsetX = (it.config.wallpaperOffsetX + dx).coerceIn(-viewWidth * 2, viewWidth * 2), wallpaperOffsetY = (it.config.wallpaperOffsetY + dy).coerceIn(-viewHeight * 2, viewHeight * 2)))
+            val newScale = (it.config.wallpaperScale * zoom).coerceAtLeast(0.01f)
+            val rawRotation = it.config.wallpaperRotation + rotationChange
+            val newRotation = (rawRotation % 360f + 360f) % 360f
+            it.copy(config = it.config.copy(
+                wallpaperScale = newScale,
+                wallpaperRotation = newRotation,
+                wallpaperOffsetX = (it.config.wallpaperOffsetX + dx).coerceIn(-viewWidth * 2, viewWidth * 2),
+                wallpaperOffsetY = (it.config.wallpaperOffsetY + dy).coerceIn(-viewHeight * 2, viewHeight * 2)
+            ))
         }
         requestPreviewUpdate()
+    }
+
+    fun setWallpaperRotation(rotation: Float) {
+        val normalized = (rotation % 360f + 360f) % 360f
+        updateConfig { it.copy(wallpaperRotation = normalized) }
+    }
+
+    fun setClockRotation(rotation: Float) {
+        val normalized = (rotation % 360f + 360f) % 360f
+        updateConfig { it.copy(clockRotation = normalized) }
     }
 
     fun updateInteraction(update: (InteractionMode) -> InteractionMode) { _uiState.update { it.copy(interactionMode = update(it.interactionMode)) } }

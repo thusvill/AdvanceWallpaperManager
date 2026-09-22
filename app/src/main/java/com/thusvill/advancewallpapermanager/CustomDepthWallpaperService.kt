@@ -145,7 +145,8 @@ class CustomDepthWallpaperService : WallpaperService() {
                 NativeLib.renderNativeFrame(
                     surface, "", baseBitmap, maskBitmap, timeBitmap,
                     config.clockX, config.clockY, config.wallpaperScale,
-                    config.wallpaperOffsetX, config.wallpaperOffsetY
+                    config.wallpaperOffsetX, config.wallpaperOffsetY,
+                    config.wallpaperRotation, config.clockRotation, config.clockDepth
                 )
             }
         }

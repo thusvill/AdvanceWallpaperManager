@@ -19,6 +19,9 @@ data class WallpaperConfig(
     var saliencyCleanupRadius: Int = 2,
     var saliencyEdgeLock: Float = 0.5f,
     var mlKitFeatherRadius: Int = 10,
+    var mlKitThreshold: Float = 0.5f,
+    var mlKitExpansionPx: Int = 0,
+    var clockDepth: Float = 1.0f,
     var accuracyLevel: Float = 1.0f,
     var isEnabled: Boolean = true,
     var fontFamily: String = "sans-serif-condensed",
@@ -30,7 +33,9 @@ data class WallpaperConfig(
     var customFontName: String = "",
     var wallpaperScale: Float = 1.0f,
     var wallpaperOffsetX: Float = 0f,
-    var wallpaperOffsetY: Float = 0f
+    var wallpaperOffsetY: Float = 0f,
+    var wallpaperRotation: Float = 0f,
+    var clockRotation: Float = 0f
 ) : Parcelable {
     constructor(parcel: Parcel) : this(
         parcel.readString() ?: "default",
@@ -48,6 +53,9 @@ data class WallpaperConfig(
         parcel.readInt(),
         parcel.readFloat(),
         parcel.readInt(),
+        try { parcel.readFloat() } catch (_: Exception) { 0.5f },
+        try { parcel.readInt() } catch (_: Exception) { 0 },
+        try { parcel.readFloat() } catch (_: Exception) { 1.0f },
         parcel.readFloat(),
         parcel.readByte() != 0.toByte(),
         parcel.readString() ?: "sans-serif-condensed",
@@ -59,7 +67,9 @@ data class WallpaperConfig(
         parcel.readString() ?: "",
         parcel.readFloat(),
         parcel.readFloat(),
-        parcel.readFloat()
+        parcel.readFloat(),
+        try { parcel.readFloat() } catch (_: Exception) { 0f },
+        try { parcel.readFloat() } catch (_: Exception) { 0f }
     )
 
     override fun writeToParcel(parcel: Parcel, flags: Int) {
@@ -78,6 +88,9 @@ data class WallpaperConfig(
         parcel.writeInt(saliencyCleanupRadius)
         parcel.writeFloat(saliencyEdgeLock)
         parcel.writeInt(mlKitFeatherRadius)
+        parcel.writeFloat(mlKitThreshold)
+        parcel.writeInt(mlKitExpansionPx)
+        parcel.writeFloat(clockDepth)
         parcel.writeFloat(accuracyLevel)
         parcel.writeByte(if (isEnabled) 1 else 0)
         parcel.writeString(fontFamily)
@@ -90,6 +103,8 @@ data class WallpaperConfig(
         parcel.writeFloat(wallpaperScale)
         parcel.writeFloat(wallpaperOffsetX)
         parcel.writeFloat(wallpaperOffsetY)
+        parcel.writeFloat(wallpaperRotation)
+        parcel.writeFloat(clockRotation)
     }
 
     override fun describeContents(): Int = 0

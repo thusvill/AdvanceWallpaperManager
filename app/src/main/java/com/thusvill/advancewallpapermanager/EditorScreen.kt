@@ -8,7 +8,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -39,6 +38,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
+import kotlin.math.abs
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -86,21 +86,23 @@ fun EditorScreen(
                 .background(Color.Black)
                 .pointerInput(uiState.interactionMode) {
                     if (uiState.interactionMode == InteractionMode.CLOCK) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            viewModel.handleClockDragDelta(
-                                dragAmount.x,
-                                dragAmount.y,
+                        detectTransformGestures { _, pan, zoom, rotation ->
+                            viewModel.handleClockTransform(
+                                pan.x,
+                                pan.y,
+                                zoom,
+                                rotation,
                                 size.width.toFloat(),
                                 size.height.toFloat()
                             )
                         }
                     } else {
-                        detectTransformGestures { _, pan, zoom, _ ->
+                        detectTransformGestures { _, pan, zoom, rotation ->
                             viewModel.handleWallpaperTransform(
                                 pan.x,
                                 pan.y,
                                 zoom,
+                                rotation,
                                 size.width.toFloat(),
                                 size.height.toFloat()
                             )
@@ -231,7 +233,7 @@ fun EditorScreen(
                         },
                         modifier = Modifier.height(56.dp)
                     ) {
-                        val tabs = listOf("Source", "Model", "Clock", "Apply")
+                        val tabs = listOf("Source", "Wallpaper", "Model", "Clock", "Apply")
                         tabs.forEachIndexed { index, title ->
                             Tab(
                                 selected = selectedTab == index,
@@ -268,7 +270,49 @@ fun EditorScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                1 -> { // Model
+                                1 -> { // Wallpaper
+                                    SectionTitle("Transform")
+                                    SliderItem("Scale", uiState.config.wallpaperScale, 0.1f..20.0f) {
+                                        viewModel.updateConfig { c -> c.copy(wallpaperScale = it) }
+                                    }
+                                    SliderItem("Rotation", uiState.config.wallpaperRotation, 0f..360f, step = 1f) {
+                                        viewModel.setWallpaperRotation(it)
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    SectionTitle("Quick Rotation Snap")
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        listOf(0f, 90f, 180f, 270f).forEach { angle ->
+                                            OutlinedButton(
+                                                onClick = { viewModel.setWallpaperRotation(angle) },
+                                                modifier = Modifier.weight(1f),
+                                                shape = MaterialTheme.shapes.medium,
+                                                colors = if (abs(uiState.config.wallpaperRotation - angle) < 1f)
+                                                    ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                else ButtonDefaults.outlinedButtonColors()
+                                            ) {
+                                                Text("${angle.toInt()}°", fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.updateConfig { c ->
+                                                c.copy(wallpaperScale = 1.0f, wallpaperOffsetX = 0f, wallpaperOffsetY = 0f, wallpaperRotation = 0f)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = MaterialTheme.shapes.medium
+                                    ) {
+                                        Text("Reset Transform")
+                                    }
+                                }
+                                2 -> { // Model
                                     SectionTitle("Pipeline")
                                     FlowRow(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                                         ExtractionMode.entries.forEach { mode ->
@@ -311,14 +355,23 @@ fun EditorScreen(
                                         }
                                         ExtractionMode.MLKIT_SUBJECT -> {
                                             SectionTitle("ML Kit Parameters")
-                                            SliderItem("Feather", uiState.config.mlKitFeatherRadius.toFloat(), 1f..24f, step = 1f) {
+                                            SliderItem("Threshold (τ)", uiState.config.mlKitThreshold, 0.05f..0.95f) {
+                                                viewModel.updateConfig { c -> c.copy(mlKitThreshold = it) }
+                                            }
+                                            SliderItem("Expansion (Px)", uiState.config.mlKitExpansionPx.toFloat(), -20f..20f, step = 1f) {
+                                                viewModel.updateConfig { c -> c.copy(mlKitExpansionPx = it.toInt()) }
+                                            }
+                                            SliderItem("Feather", uiState.config.mlKitFeatherRadius.toFloat(), 1f..32f, step = 1f) {
                                                 viewModel.updateConfig { c -> c.copy(mlKitFeatherRadius = it.toInt()) }
+                                            }
+                                            SliderItem("Clock Depth (Occlusion Clamp)", uiState.config.clockDepth, 0.0f..1.0f) {
+                                                viewModel.updateConfig { c -> c.copy(clockDepth = it) }
                                             }
                                         }
                                         else -> {}
                                     }
                                 }
-                                2 -> { // Clock
+                                3 -> { // Clock
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                         OutlinedButton(
                                             onClick = { viewModel.updateConfig { it.copy(clockMode = ClockMode.HORIZONTAL) } },
@@ -350,8 +403,31 @@ fun EditorScreen(
                                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                                     )
 
-                                    SliderItem("Size", uiState.config.fontSize, 50f..600f) {
+                                    SliderItem("Size", uiState.config.fontSize, 10f..1000f) {
                                         viewModel.updateConfig { c -> c.copy(fontSize = it) }
+                                    }
+                                    SliderItem("Rotation", uiState.config.clockRotation, 0f..360f, step = 1f) {
+                                        viewModel.setClockRotation(it)
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    SectionTitle("Clock Rotation Snap")
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        listOf(0f, 90f, 180f, 270f).forEach { angle ->
+                                            OutlinedButton(
+                                                onClick = { viewModel.setClockRotation(angle) },
+                                                modifier = Modifier.weight(1f),
+                                                shape = MaterialTheme.shapes.medium,
+                                                colors = if (abs(uiState.config.clockRotation - angle) < 1f)
+                                                    ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                else ButtonDefaults.outlinedButtonColors()
+                                            ) {
+                                                Text("${angle.toInt()}°", fontSize = 12.sp)
+                                            }
+                                        }
                                     }
                                     SliderItem("Vertical Stretch", uiState.config.clockHeightScale, 0.5f..3.0f) {
                                         viewModel.updateConfig { c -> c.copy(clockHeightScale = it) }
@@ -468,7 +544,7 @@ fun EditorScreen(
                                         }
                                     }
                                 }
-                                3 -> { // Apply
+                                4 -> { // Apply
                                     Button(
                                         onClick = { viewModel.applyConfig(onBack) },
                                         modifier = Modifier.fillMaxWidth(),

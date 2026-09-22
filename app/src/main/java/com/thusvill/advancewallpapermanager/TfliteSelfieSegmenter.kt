@@ -72,7 +72,7 @@ class TfliteSelfieSegmenter(
                 if (!response.areModulesAvailable()) {
                     moduleInstallClient.installModules(request)
                         .addOnSuccessListener {
-                            Log.d("TfliteSelfie", "Module installed successfully")
+                            // Module installed successfully
                         }
                         .addOnFailureListener { e ->
                             Log.e("TfliteSelfie", "Module install failed", e)
@@ -82,25 +82,25 @@ class TfliteSelfieSegmenter(
     }
 
     fun segment(bitmap: Bitmap): SegmentationMask? {
-        if (!isInitialized) {
-            if (config.pipeline == Pipeline.MLKIT_SUBJECT) {
-                val options = SubjectSegmenterOptions.Builder()
-                    .enableForegroundConfidenceMask()
-                    .build()
-                mlKitSegmenter = SubjectSegmentation.getClient(options)
-                isInitialized = true
-            } else {
-                ensureInterpreter()
-            }
-        }
         return try {
+            if (!isInitialized) {
+                if (config.pipeline == Pipeline.MLKIT_SUBJECT) {
+                    val options = SubjectSegmenterOptions.Builder()
+                        .enableForegroundConfidenceMask()
+                        .build()
+                    mlKitSegmenter = SubjectSegmentation.getClient(options)
+                    isInitialized = true
+                } else {
+                    ensureInterpreter()
+                }
+            }
             if (config.pipeline == Pipeline.MLKIT_SUBJECT) {
                 segmentWithMlKit(bitmap)
             } else {
                 segmentWithTfLite(bitmap)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Inference crashed: ${e.localizedMessage}", e)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Segmentation failed for model '${config.modelPath}': ${e.localizedMessage}", e)
             null
         }
     }
@@ -114,8 +114,6 @@ class TfliteSelfieSegmenter(
 
         val maskWidth = bitmap.width
         val maskHeight = bitmap.height
-
-        Log.d(TAG, "ML Kit Mask capacity: ${floatBuffer.capacity()}, expected: ${maskWidth * maskHeight}")
 
         val byteBuffer = ByteBuffer.allocateDirect(floatBuffer.capacity() * 4).order(ByteOrder.nativeOrder())
         floatBuffer.rewind()

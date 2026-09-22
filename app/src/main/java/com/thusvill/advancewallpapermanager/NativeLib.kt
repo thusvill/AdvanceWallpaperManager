@@ -19,8 +19,22 @@ object NativeLib {
         clockY: Float,
         wallpaperScale: Float,
         offsetX: Float,
-        offsetY: Float
+        offsetY: Float,
+        wallpaperRotation: Float = 0f,
+        clockRotation: Float = 0f,
+        clockDepth: Float = 1.0f
     )
+
+    external fun extractMlKitSubjectNative(
+        originalBitmap: Bitmap,
+        maskBuffer: ByteBuffer,
+        maskW: Int,
+        maskH: Int,
+        outputBitmap: Bitmap,
+        threshold: Float,
+        featherRadius: Int,
+        expansionPx: Int
+    ): Boolean
 
     external fun extractMaskNative(
         originalBitmap: Bitmap,
