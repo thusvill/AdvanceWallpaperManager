@@ -27,7 +27,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.thusvill.advancewallpapermanager.ui.theme.AdvanceWallpaperManagerTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -41,7 +44,7 @@ fun GalleryScreenPreview() {
         Scaffold(
             topBar = {
                 MediumTopAppBar(
-                    title = { Text("Depth Wallpapers") },
+                    title = { Text("Wallpaper Configs") },
                     actions = {
                         IconButton(onClick = {}) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -83,27 +86,48 @@ fun GalleryScreen(
     onNavigateToSettings: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var configs by remember { mutableStateOf(emptyList<WallpaperConfig>()) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val scope = rememberCoroutineScope()
 
-    // Permission State
+    // STABILITY FIX: Safe permission check
     var hasFullAccess by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 Environment.isExternalStorageManager()
             } else {
-                true // Handled by traditional permissions in Manifest
+                true 
             }
         )
     }
 
+    // Refresh logic
     fun refreshConfigs() {
         scope.launch(Dispatchers.IO) {
-            val list = configManager.loadAllConfigs()
-            withContext(Dispatchers.Main) {
-                configs = list
+            try {
+                val list = configManager.loadAllConfigs()
+                withContext(Dispatchers.Main) {
+                    configs = list
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("GalleryScreen", "Failed to refresh configs", e)
             }
+        }
+    }
+
+    // Observe lifecycle to update permission state when coming back from settings
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    hasFullAccess = Environment.isExternalStorageManager()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -114,9 +138,13 @@ fun GalleryScreen(
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             scope.launch(Dispatchers.IO) {
-                val success = configManager.importConfig(it)
-                if (success) {
-                    refreshConfigs()
+                try {
+                    val success = configManager.importConfig(it)
+                    if (success) {
+                        refreshConfigs()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("GalleryScreen", "Import failed", e)
                 }
             }
         }
@@ -157,8 +185,12 @@ fun GalleryScreen(
                         intent.data = Uri.parse("package:${context.packageName}")
                         context.startActivity(intent)
                     } catch (e: Exception) {
-                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                        context.startActivity(intent)
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                            context.startActivity(intent)
+                        } catch (ex: Exception) {
+                            android.util.Log.e("GalleryScreen", "Settings intent failed", ex)
+                        }
                     }
                 }
             }
@@ -232,7 +264,11 @@ fun ConfigItem(config: WallpaperConfig, configManager: ConfigManager, onClick: (
     
     LaunchedEffect(config.id) {
         withContext(Dispatchers.IO) {
-            previewBitmap = configManager.loadBundleBitmap(config.id, "preview")
+            try {
+                previewBitmap = configManager.loadBundleBitmap(config.id, "preview")
+            } catch (e: Exception) {
+                android.util.Log.e("GalleryScreen", "Failed to load thumb", e)
+            }
         }
     }
 
