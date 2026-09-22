@@ -1,9 +1,15 @@
-# Advance Wallpaper Manager
+<div align="center">
+  <img width="512" height="512" alt="icon-512" src="https://github.com/user-attachments/assets/b71bdd17-a6ca-4afc-8c32-99e7cb263ce1" />
 
+  # Advance Wallpaper Manager
+
+  
 ![Android](https://img.shields.io/badge/Android-37%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20%20%2F%20NDK-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)
+</div>
+
 
 Advance Wallpaper Manager is an Android application for creating depth-effect live wallpapers. It renders a clock layer behind extracted subject foreground masks using on-device machine learning models and a native C++ rendering pipeline.
 
