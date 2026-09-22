@@ -11,11 +11,7 @@ Advance Wallpaper Manager is an Android application for creating depth-effect li
 
 | Main Gallery | Depth Editor | Clock Customization |
 | :---: | :---: | :---: |
-| ![Gallery Screen Placeholder](docs/images/gallery_screen.png) | ![Editor Screen Placeholder](docs/images/editor_screen.png) | ![Clock Settings Placeholder](docs/images/clock_settings.png) |
-
-| AI Model Tuning | Wallpaper Transformation | Live Wallpaper Preview |
-| :---: | :---: | :---: |
-| ![Model Settings Placeholder](docs/images/model_settings.png) | ![Wallpaper Transform Placeholder](docs/images/wallpaper_transform.png) | ![Live Preview Placeholder](docs/images/live_preview.gif) |
+| <img width="1080" height="2200" alt="ssg" src="https://github.com/user-attachments/assets/16a36384-873b-4aab-9041-41e0b260e0ad" /> | <img width="1080" height="2200" alt="ssc1" src="https://github.com/user-attachments/assets/4cc66b88-1d62-4716-854d-f26fe0551879" /> | <img width="1080" height="2200" alt="ssc2" src="https://github.com/user-attachments/assets/f67f07d7-43f1-4be7-b6b7-e1fdeff537b8" /> |
 
 ## Features
 
