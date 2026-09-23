@@ -78,7 +78,7 @@ fun SettingsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Config Rotation
+            //Config Rotation
             item {
                 Text(
                     "Wallpaper Rotation", 
@@ -119,7 +119,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 2. Font Management
+            //Font Management
             item {
                 Text(
                     "Font Management", 
@@ -175,7 +175,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 3. Reset Data
+            //Reset Data
             item {
                 Text(
                     "System", 

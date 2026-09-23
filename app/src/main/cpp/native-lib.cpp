@@ -37,9 +37,18 @@ inline uint32_t blend(uint32_t s, uint32_t d) {
   uint8_t a = (s >> 24) & 0xFF;
   if (a == 0) return d;
   if (a == 255) return s;
-  uint32_t rb = ((((s & 0x00FF00FF) * a) + ((d & 0x00FF00FF) * (255 - a))) >> 8) & 0x00FF00FF;
-  uint32_t g = ((((s & 0x0000FF00) * a) + ((d & 0x0000FF00) * (255 - a))) >> 8) & 0x0000FF00;
-  return 0xFF000000 | rb | g;
+  uint32_t invA = 255 - a;
+  uint32_t sr = (s >> 16) & 0xFF;
+  uint32_t sg = (s >> 8) & 0xFF;
+  uint32_t sb = s & 0xFF;
+  uint32_t dr = (d >> 16) & 0xFF;
+  uint32_t dg = (d >> 8) & 0xFF;
+  uint32_t db = d & 0xFF;
+
+  uint32_t r = sr + (dr * invA + 127) / 255;
+  uint32_t g = sg + (dg * invA + 127) / 255;
+  uint32_t b = sb + (db * invA + 127) / 255;
+  return 0xFF000000 | (std::min(255u, r) << 16) | (std::min(255u, g) << 8) | std::min(255u, b);
 }
 
 /**
@@ -479,7 +488,15 @@ void internalExtractRefined(JNIEnv *env, jobject original_bitmap, jobject mask_b
 
     // 5. Final Composition
     for (int i = 0; i < width * height; ++i) {
-        dst[i] = (alpha[i] << 24) | (tempSrc[i] & 0x00FFFFFF);
+        uint32_t a = alpha[i];
+        uint32_t color = tempSrc[i];
+        uint32_t r = ((color >> 16) & 0xFF) * a;
+        uint32_t g = ((color >> 8) & 0xFF) * a;
+        uint32_t b = (color & 0xFF) * a;
+        dst[i] = (a << 24) |
+                 (((r + 127) / 255) << 16) |
+                 (((g + 127) / 255) << 8) |
+                 ((b + 127) / 255);
     }
 
     AndroidBitmap_unlockPixels(env, original_bitmap);

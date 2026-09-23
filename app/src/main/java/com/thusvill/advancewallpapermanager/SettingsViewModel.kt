@@ -110,16 +110,16 @@ class SettingsViewModel(application: Application, private val configManager: Con
 
     fun resetUserData() {
         viewModelScope.launch(Dispatchers.IO) {
-            // 1. Delete all configs
+            //Delete all configs
             configManager.loadAllConfigs().forEach { config ->
                 configManager.deleteConfig(config.id)
             }
-            // 2. Delete all custom fonts
+            //Delete all custom fonts
             val fontsDir = File(getApplication<Application>().filesDir, "custom_fonts")
             fontsDir.deleteRecursively()
             fontsDir.mkdirs()
             
-            // 3. Clear rotation prefs
+            //Clear rotation prefs
             rotationManager.setRotationMode(RotationMode.NONE)
             
             loadSettings()
