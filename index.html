@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f9ff">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Advance Wallpaper Manager — Android depth wallpapers with custom lockscreen clocks, fonts, portable configs, and wallpaper rotation.">
+  <title>Advance Wallpaper Manager</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="src/favicon.ico" type="image/x-icon">
+</head>
+<body>
+  <div class="material-backdrop" aria-hidden="true">
+    <span class="shape shape-a shape-blob"></span>
+    <span class="shape shape-b shape-diamond"></span>
+    <span class="shape shape-c shape-flower"></span>
+    <span class="shape shape-d shape-starburst"></span>
+    <span class="shape shape-e shape-hex"></span>
+    <span class="shape shape-f shape-clover"></span>
+  </div>
+
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="Advance Wallpaper Manager home">
+      <img src="src/icon-192.png" class="brand-icon shape-squircle" alt="Advance Wallpaper Manager logo">
+      <span>
+        <strong>Advance Wallpaper Manager</strong>
+        <small>Android · Open source</small>
+      </span>
+    </a>
+
+    <nav class="desktop-nav" aria-label="Main navigation">
+      <a href="#features">Features</a>
+      <a href="#editor">Editor</a>
+      <a href="#gallery">Gallery</a>
+      <a href="#github">GitHub</a>
+    </nav>
+
+    <div class="top-actions">
+      <button class="icon-button shape-pill" id="themeToggle" type="button" aria-label="Switch theme" title="Switch theme">
+        <img id="themeIcon" class="icon" src="https://img.icons8.com/ios-glyphs/24/000000/moon-symbol.png" alt="" aria-hidden="true">
+      </button>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero page-width">
+      <div class="hero-copy">
+        <span class="eyebrow">DEPTH WALLPAPERS FOR ANDROID</span>
+        <h1>Put the subject <span>over your clock.</span></h1>
+        <p>Turn any image into a depth lockscreen. Pick a font, tune the clock, save the whole design, and reuse it anywhere.</p>
+        <div class="hero-actions">
+          <a class="button button-primary shape-squircle" id="heroDownload" href="#github">
+            <img class="icon icon-on-primary" src="https://img.icons8.com/material-sharp/20/000000/download.png" alt="" aria-hidden="true">
+            Download APK
+          </a>
+          <a class="button button-tonal shape-pill" href="https://github.com/thusvill/AdvanceWallpaperManager" target="_blank" rel="noreferrer">
+            <img class="icon" src="https://img.icons8.com/material-sharp/20/000000/github.png" alt="" aria-hidden="true">
+            View source
+          </a>
+          <a class="github-star-button shape-starburst" href="https://github.com/thusvill/AdvanceWallpaperManager" target="_blank" rel="noreferrer" aria-label="Open GitHub repository and see its star count">
+            <img class="icon" src="https://img.icons8.com/material-sharp/19/000000/star.png" alt="" aria-hidden="true">
+            <span id="heroStarCount">—</span>
+            <span class="star-label">stars</span>
+          </a>
+        </div>
+        <div class="hero-meta">
+          <span class="shape-pill">Android 10+</span>
+          <span class="shape-pill">Jetpack Compose</span>
+          <span class="shape-pill">Native C++20</span>
+        </div>
+      </div>
+
+      <div class="hero-preview" aria-label="Placeholder depth wallpaper preview">
+        <div class="phone shape-squircle">
+          <div class="phone-screen shape-squircle">
+            <!-- <div class="scene scene-sky"></div>
+            <div class="scene scene-ground"></div>
+            <div class="clock-layer">09:41</div>
+            <div class="subject-layer" aria-label="Subject rendered above clock"></div>
+            <div class="preview-note shape-pill">PLACEHOLDER ARTWORK</div> -->
+            <img class="hero-art" src="src/ss/ssls1.png" alt="Placeholder depth wallpaper preview">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section page-width" id="features">
+      <div class="section-heading">
+        <span class="eyebrow">ESSENTIAL FEATURES</span>
+        <h2>The parts that matter.</h2>
+      </div>
+
+      <div class="feature-grid">
+        <article class="material-card feature-card shape-squircle">
+          <span class="feature-symbol shape-squircle"><img class="icon" src="https://img.icons8.com/material-sharp/24/000000/layers.png" alt="" aria-hidden="true"></span>
+          <h3>Real depth layering</h3>
+          <p>Base wallpaper, custom clock, then the detected subject on top.</p>
+        </article>
+
+        <article class="material-card feature-card shape-star">
+          <span class="feature-symbol shape-starburst"><img class="icon" src="https://img.icons8.com/material-sharp/24/000000/artificial-intelligence.png" alt="" aria-hidden="true"></span>
+          <h3>ML Kit subject cutout</h3>
+          <p>On-device ML Kit segmentation creates the foreground mask for the depth effect.</p>
+        </article>
+
+        <article class="material-card feature-card shape-pill">
+          <span class="feature-symbol shape-pill"><img class="icon" src="https://img.icons8.com/material-sharp/24/000000/font-size.png" alt="" aria-hidden="true"></span>
+          <h3>Your font, your clock, your wallpapers</h3>
+          <p>Use system fonts or import TTF, OTF, and ZIP font archives.</p>
+        </article>
+
+        <article class="material-card feature-card shape-cut">
+          <span class="feature-symbol shape-diamond"><img class="icon" src="https://img.icons8.com/material-sharp/24/000000/box.png" alt="" aria-hidden="true"></span>
+          <h3>One portable config</h3>
+          <p>Bundle the image, mask, preview, font, and settings into one shareable file.</p>
+        </article>
+
+        <article class="material-card feature-card shape-hex">
+          <span class="feature-symbol shape-hex"><img class="icon" src="https://img.icons8.com/material-sharp/24/000000/rotate-right.png" alt="" aria-hidden="true"></span>
+          <h3>Wallpaper rotation</h3>
+          <p>Daily, hourly, or on-awake rotation powered by Android WorkManager.</p>
+        </article>
+
+        <article class="material-card feature-card shape-arch">
+          <span class="feature-symbol shape-octagon"><img class="icon" src="https://img.icons8.com/material-sharp/24/000000/low-battery.png" alt="" aria-hidden="true"></span>
+          <h3>Built to stay quiet</h3>
+          <p>The lockscreen clock refreshes by minute boundary instead of running a constant UI loop.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section page-width" id="depth">
+      <div class="section-heading">
+        <span class="eyebrow">THE DEPTH STACK</span>
+        <h2>Subject over clock, by design.</h2>
+      </div>
+
+      <div class="depth-card material-card shape-squircle">
+        <div class="depth-preview" id="depthPreview">
+          <div class="depth-base"></div>
+          <div class="depth-clock">09:41</div>
+          <div class="depth-subject"></div>
+          <div class="depth-label shape-pill">SUBJECT</div>
+        </div>
+        <div class="depth-copy">
+          <button class="layer-row active shape-squircle" data-depth="base" type="button">
+            <span class="layer-number shape-squircle">01</span>
+            <span><strong>Base</strong><small>Your original image</small></span>
+          </button>
+          <button class="layer-row shape-pill" data-depth="clock" type="button">
+            <span class="layer-number shape-pill">02</span>
+            <span><strong>Clock</strong><small>Custom font + layout</small></span>
+          </button>
+          <button class="layer-row shape-diamond" data-depth="subject" type="button">
+            <span class="layer-number shape-diamond">03</span>
+            <span><strong>Subject</strong><small>ML Kit foreground mask</small></span>
+          </button>
+          <p class="muted" id="depthDescription">The image sits at the bottom of the stack. The clock is composed above it, then the foreground subject is rendered on top of the clock.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section page-width" id="editor">
+      <div class="section-heading">
+        <span class="eyebrow">EDITOR</span>
+        <h2>Controls stay below the preview.</h2>
+        <p>A compact bottom-sheet style control surface keeps the wallpaper visible while you edit it.</p>
+      </div>
+
+      <div class="editor-demo material-card shape-blob">
+        <div class="editor-preview shape-squircle">
+          <div class="mini-art"></div>
+          <div class="mini-clock">09:41</div>
+          <div class="mini-subject"></div>
+          <div class="editor-float-chip shape-pill">Depth wallpaper</div>
+        </div>
+
+        <div class="editor-sheet shape-squircle">
+          <div class="drag-handle" aria-hidden="true"></div>
+          <div class="editor-tabs" role="tablist" aria-label="Editor controls">
+            <button class="editor-tab active shape-pill" role="tab" aria-selected="true" data-tab="wallpaper" type="button">Wallpaper</button>
+            <button class="editor-tab shape-pill" role="tab" aria-selected="false" data-tab="model" type="button">Model</button>
+            <button class="editor-tab shape-pill" role="tab" aria-selected="false" data-tab="clock" type="button">Clock</button>
+          </div>
+          <div id="editorContent"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section page-width" id="gallery">
+      <div class="section-heading gallery-heading">
+        <div>
+          <span class="eyebrow">GALLERY</span>
+          <h2>Different designs. Same depth.</h2>
+          <p>These are placeholders for your real wallpapers and screenshots. Replace the artwork blocks with your own images later.</p>
+        </div>
+        <span class="shape-badge shape-diamond" aria-hidden="true"><img class="icon" src="https://img.icons8.com/material-sharp/28/000000/image.png" alt="" aria-hidden="true"></span>
+      </div>
+
+      <div class="gallery-grid">
+        <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssls7.png"></span></div>
+        </article>
+        <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssls8.png"></span></div>
+        </article>
+        <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssls4.png"></span></div>
+        </article>
+        <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssls5.png"></span></div>
+        </article>
+        <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssls6.png"></span></div>
+        </article>
+        <!-- <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssls3.png"></span></div>
+        </article> -->
+
+        <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssc1.png"></span></div>
+        </article>
+        <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssc2.png"></span></div>
+        </article>
+        <article class="gallery-card material-card shape-rounded">
+          <div class="gallery-art "><span class="shape-pill"><img src="src/ss/ssc3.png"></span></div>
+        </article>
+        
+      </div>
+    </section>
+
+    <section class="section page-width warning-section">
+      <div class="warning-card material-card shape-scallop">
+        <span class="shape-icon shape-diamond"><img class="icon" src="https://img.icons8.com/material-sharp/22/000000/error.png" alt="" aria-hidden="true"></span>
+        <div>
+          <span class="eyebrow">IMPORTANT</span>
+          <h3>Segmentation can be imperfect.</h3>
+          <p>ML Kit does not reproduce Apple's depth extraction. Hair, thin edges, similar-colored objects, and overlapping subjects can be misread. Some photos will need mask tuning, and some simply will not produce a clean depth effect.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section page-width" id="github">
+      <div class="section-heading github-heading">
+        <div>
+          <span class="eyebrow">GITHUB</span>
+          <h2>Releases and the people behind it.</h2>
+          <p>Release notes are rendered from GitHub Markdown. Published assets get direct download buttons.</p>
+        </div>
+        <a class="button button-tonal shape-pill" href="https://github.com/thusvill/AdvanceWallpaperManager" target="_blank" rel="noreferrer">
+          <img class="icon" src="https://img.icons8.com/material-sharp/20/000000/github.png" alt="" aria-hidden="true">
+          Open GitHub
+        </a>
+      </div>
+
+      <div class="github-stats" aria-live="polite">
+        <div class="stat-card material-card shape-squircle"><strong id="repoStars">—</strong><span>Stars</span></div>
+        <div class="stat-card material-card shape-pill"><strong id="repoForks">—</strong><span>Forks</span></div>
+        <div class="stat-card material-card shape-diamond"><strong id="repoIssues">—</strong><span>Open issues</span></div>
+        <div class="stat-card material-card shape-octagon"><strong id="repoLicense">GNU</strong><span>License</span></div>
+      </div>
+
+      <div class="github-columns">
+        <div>
+          <div class="subheading"><h3>Releases</h3><span id="releaseStatus" class="status shape-pill">Loading…</span></div>
+          <div id="releaseList" class="release-list"></div>
+        </div>
+        <div>
+          <div class="subheading"><h3>Contributors</h3><span id="contributorStatus" class="status shape-pill">Loading…</span></div>
+          <div id="contributors" class="contributors"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer page-width">
+    <div>
+      <strong>Advance Wallpaper Manager</strong>
+      <p>Open source Android depth wallpaper editor.</p>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/thusvill/AdvanceWallpaperManager" target="_blank" rel="noreferrer">GitHub</a>
+      <a href="https://github.com/thusvill/AdvanceWallpaperManager/releases" target="_blank" rel="noreferrer">Releases</a>
+      <span>GNU License</span>
+      <a href="https://icons8.com" target="_blank" rel="noreferrer">Icons by Icons8</a>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
