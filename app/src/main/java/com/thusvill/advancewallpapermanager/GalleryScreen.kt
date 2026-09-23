@@ -166,7 +166,7 @@ fun GalleryScreen(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             MediumTopAppBar(
-                title = { Text(if (isSelectionMode) "${selectedConfigIds.size} selected" else "Depth Wallpapers") },
+                title = { Text(if (isSelectionMode) "${selectedConfigIds.size} selected" else "Wallpapers Configs") },
                 actions = {
                     if (isSelectionMode) {
                         IconButton(
@@ -208,6 +208,7 @@ fun GalleryScreen(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 shape = MaterialTheme.shapes.large
+                
             ) {
                 Icon(Icons.Default.Add, contentDescription = "New Config")
             }
