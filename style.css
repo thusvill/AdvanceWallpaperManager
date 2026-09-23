@@ -61,24 +61,58 @@ button { font: inherit; }
 .shape-d { width: 150px; height: 150px; left: 44%; top: 27%; background: var(--surface-2); animation-delay: -10s; opacity: .28; }
 .shape-e { width: 130px; height: 130px; right: 28%; bottom: 6%; background: var(--primary-container); animation-delay: -5s; opacity: .24; }
 .shape-f { width: 120px; height: 120px; left: 18%; bottom: 16%; background: var(--surface-3); animation-delay: -8s; opacity: .22; }
-.shape-blob { border-radius: 63% 37% 47% 53% / 53% 48% 52% 47%; }
-.shape-diamond { clip-path: polygon(50% 3%, 96% 50%, 50% 97%, 4% 50%); }
-.shape-flower { border-radius: 50%; clip-path: polygon(50% 0%, 61% 18%, 80% 8%, 82% 29%, 100% 38%, 85% 50%, 100% 62%, 82% 71%, 80% 92%, 61% 82%, 50% 100%, 39% 82%, 20% 92%, 18% 71%, 0% 62%, 15% 50%, 0% 38%, 18% 29%, 20% 8%, 39% 18%); }
-.shape-starburst { clip-path: polygon(50% 0%, 58% 24%, 79% 7%, 72% 30%, 100% 25%, 77% 43%, 98% 58%, 73% 59%, 86% 84%, 61% 69%, 58% 100%, 48% 73%, 26% 92%, 34% 66%, 3% 72%, 26% 51%, 0% 34%, 29% 34%, 18% 8%, 42% 24%); }
-.shape-hex { clip-path: polygon(25% 3%, 75% 3%, 97% 50%, 75% 97%, 25% 97%, 3% 50%); }
-.shape-octagon { clip-path: polygon(28% 2%, 72% 2%, 98% 28%, 98% 72%, 72% 98%, 28% 98%, 2% 72%, 2% 28%); }
-.shape-pentagon { clip-path: polygon(50% 2%, 97% 36%, 79% 98%, 21% 98%, 3% 36%); }
-.shape-squircle { border-radius: 30px; }
-.shape-pill { border-radius: 999px; }
-.shape-scallop { border-radius: 28px 28px 20px 20px; }
-.shape-flower-card { border-radius: 28px 36px 24px 36px; }
-.shape-clover { border-radius: 46% 54% 54% 46% / 54% 46% 54% 46%; }
-.shape-cut { border-radius: 22px; clip-path: polygon(0 10%, 10% 0, 100% 0, 100% 90%, 90% 100%, 0 100%); }
-.shape-arch { border-radius: 36px 36px 22px 22px; }
-.shape-star { border-radius: 26px; clip-path: polygon(50% 0, 61% 32%, 98% 35%, 69% 56%, 78% 96%, 50% 73%, 22% 96%, 31% 56%, 2% 35%, 39% 32%); }
-.shape-rounded { border-radius: 28px 18px 30px 18px; }
+/* Material You / Material 3 Expressive-inspired shape vocabulary.
+   Geometry is kept crisp, while content-bearing controls use centered layout. */
+.shape-blob {
+  border-radius: 58% 42% 62% 38% / 44% 58% 42% 56%;
+}
+.shape-diamond {
+  clip-path: polygon(50% 2%, 98% 50%, 50% 98%, 2% 50%);
+}
+.shape-flower {
+  clip-path: polygon(50% 0%, 58% 17%, 72% 6%, 72% 23%, 91% 16%, 83% 34%, 100% 39%, 84% 50%, 100% 61%, 83% 66%, 91% 84%, 72% 77%, 72% 94%, 58% 83%, 50% 100%, 42% 83%, 28% 94%, 28% 77%, 9% 84%, 17% 66%, 0% 61%, 16% 50%, 0% 39%, 17% 34%, 9% 16%, 28% 23%, 28% 6%, 42% 17%);
+}
+.shape-starburst {
+  clip-path: polygon(50% 0%, 56% 19%, 68% 5%, 67% 24%, 86% 14%, 76% 31%, 98% 28%, 81% 42%, 100% 50%, 81% 58%, 98% 72%, 76% 69%, 86% 86%, 67% 76%, 68% 95%, 56% 81%, 50% 100%, 44% 81%, 32% 95%, 33% 76%, 14% 86%, 24% 69%, 2% 72%, 19% 58%, 0% 50%, 19% 42%, 2% 28%, 24% 31%, 14% 14%, 33% 24%, 32% 5%, 44% 19%);
+}
+.shape-hex {
+  clip-path: polygon(25% 2%, 75% 2%, 98% 50%, 75% 98%, 25% 98%, 2% 50%);
+}
+.shape-octagon {
+  clip-path: polygon(29% 2%, 71% 2%, 98% 29%, 98% 71%, 71% 98%, 29% 98%, 2% 71%, 2% 29%);
+}
+.shape-pentagon {
+  clip-path: polygon(50% 2%, 98% 38%, 80% 98%, 20% 98%, 2% 38%);
+}
+.shape-squircle {
+  border-radius: 30%;
+}
+.shape-pill {
+  border-radius: 999px;
+}
+.shape-scallop {
+  clip-path: polygon(0 14%, 5% 7%, 12% 4%, 20% 7%, 28% 4%, 36% 7%, 44% 4%, 52% 7%, 60% 4%, 68% 7%, 76% 4%, 84% 7%, 95% 6%, 100% 14%, 97% 25%, 100% 36%, 97% 47%, 100% 58%, 97% 69%, 100% 80%, 95% 93%, 84% 96%, 76% 93%, 68% 96%, 60% 93%, 52% 96%, 44% 93%, 36% 96%, 28% 93%, 20% 96%, 12% 93%, 5% 90%, 0 80%, 3% 69%, 0 58%, 3% 47%, 0 36%, 3% 25%);
+}
+.shape-flower-card {
+  border-radius: 34% 20% 34% 20% / 24% 34% 24% 34%;
+}
+.shape-clover {
+  clip-path: polygon(50% 2%, 64% 4%, 74% 13%, 82% 12%, 91% 20%, 88% 30%, 97% 38%, 98% 50%, 96% 62%, 87% 70%, 91% 80%, 82% 88%, 73% 87%, 64% 96%, 50% 98%, 37% 96%, 27% 87%, 18% 88%, 9% 80%, 13% 70%, 4% 62%, 2% 50%, 4% 38%, 13% 30%, 9% 20%, 18% 12%, 27% 13%, 36% 4%);
+}
+.shape-cut {
+  clip-path: polygon(0 12%, 12% 0, 88% 0, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0 88%);
+}
+.shape-arch {
+  border-radius: 50% 50% 28% 28% / 34% 34% 20% 20%;
+}
+.shape-star {
+  clip-path: polygon(50% 0, 61% 31%, 98% 34%, 69% 55%, 78% 98%, 50% 73%, 22% 98%, 31% 55%, 2% 34%, 39% 31%);
+}
+.shape-rounded {
+  border-radius: 28px 18px 30px 18px;
+}
 
-.icon { width: 20px; height: 20px; object-fit: contain; display: inline-block; flex: 0 0 auto; filter: brightness(0); }
+.icon { width: 20px; height: 20px; object-fit: contain; display: inline-block; flex: 0 0 auto; filter: brightness(0); align-self: center; }
 .icon-on-primary { filter: brightness(0) invert(1); }
 
 @keyframes materialFloat {
@@ -263,7 +297,7 @@ h3 { margin-bottom: 7px; font-size: 1.12rem; }
   width: 100%;
   height: 100%;
   min-width: 0;
-  min-height: 100;
+  min-height: 100%;
   display: block;
   padding: 0;
   overflow: hidden;
@@ -449,26 +483,46 @@ h3 { margin-bottom: 7px; font-size: 1.12rem; }
 :root[data-theme="dark"] .icon:not(.icon-on-primary) { filter: invert(1); }
 :root[data-theme="dark"] .icon-on-primary { filter: brightness(0); }
 
-/* Keep expressive geometry without clipping card content. Shape clipping is reserved for badges/icons. */
+/* Large shape-bearing cards use a shaped background layer so their text stays fully visible. */
 .feature-card.shape-star,
 .feature-card.shape-hex,
 .feature-card.shape-cut,
-.gallery-card.shape-star,
-.gallery-card.shape-hex,
-.gallery-card.shape-cut,
 .stat-card.shape-diamond,
 .layer-row.shape-diamond {
-  clip-path: none;
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
-.feature-card.shape-star { border-radius: 28px 28px 18px 34px; }
-.feature-card.shape-hex { border-radius: 26px 34px 26px 18px; }
-.feature-card.shape-cut { border-radius: 18px 30px 18px 30px; }
-.gallery-card.shape-star { border-radius: 28px 18px 28px 18px; }
-.gallery-card.shape-hex { border-radius: 24px 30px 18px 30px; }
-.gallery-card.shape-cut { border-radius: 18px 28px 18px 28px; }
-.stat-card.shape-diamond { border-radius: 22px 34px 22px 34px; }
-.layer-row.shape-diamond { border-radius: 18px 26px 18px 26px; }
+.feature-card.shape-star::before,
+.feature-card.shape-hex::before,
+.feature-card.shape-cut::before,
+.stat-card.shape-diamond::before,
+.layer-row.shape-diamond::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--outline) 46%, transparent);
+}
+
+.feature-card.shape-star::before { clip-path: polygon(50% 0, 61% 31%, 98% 34%, 69% 55%, 78% 98%, 50% 73%, 22% 98%, 31% 55%, 2% 34%, 39% 31%); }
+.feature-card.shape-hex::before { clip-path: polygon(25% 2%, 75% 2%, 98% 50%, 75% 98%, 25% 98%, 2% 50%); }
+.feature-card.shape-cut::before { clip-path: polygon(0 12%, 12% 0, 88% 0, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0 88%); }
+.stat-card.shape-diamond::before,
+.layer-row.shape-diamond::before { clip-path: polygon(50% 2%, 98% 50%, 50% 98%, 2% 50%); }
+
+.feature-card.shape-star > *,
+.feature-card.shape-hex > *,
+.feature-card.shape-cut > *,
+.stat-card.shape-diamond > *,
+.layer-row.shape-diamond > * {
+  position: relative;
+  z-index: 1;
+}
 
 .github-star-button,
 .asset-button,
@@ -519,4 +573,66 @@ h3 { margin-bottom: 7px; font-size: 1.12rem; }
 .asset-button,
 .release-link {
   isolation: isolate;
+}
+
+
+/* Material You cards read as centered expressive containers. */
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.feature-card .feature-symbol {
+  flex: 0 0 auto;
+}
+.feature-card h3,
+.feature-card p {
+  max-width: 30rem;
+}
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Center contents inside expressive controls and shape badges. */
+.icon-button,
+.github-star-button,
+.button,
+.feature-symbol,
+.shape-badge,
+.shape-icon,
+.layer-number,
+.editor-tab,
+.fake-chip,
+.status,
+.asset-button,
+.release-link,
+.editor-float-chip,
+.github-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.feature-symbol,
+.shape-badge,
+.shape-icon,
+.layer-number {
+  place-content: center;
+}
+
+.layer-number {
+  text-align: center;
+}
+
+/* Decorative shapes remain behind content and never interfere with interaction. */
+.material-backdrop .shape {
+  transform-origin: 50% 50%;
 }
