@@ -52,6 +52,7 @@ android {
             isUniversalApk = true
         }
     }
+
 }
 dependencies {
     implementation(libs.androidx.appcompat)

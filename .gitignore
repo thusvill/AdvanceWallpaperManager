@@ -16,3 +16,4 @@ local.properties
 keystore.jks
 **.apk
 app/relese/**
+app/relese
