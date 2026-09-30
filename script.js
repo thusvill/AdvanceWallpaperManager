@@ -1,6 +1,8 @@
 (() => {
   const REPO = 'thusvill/AdvanceWallpaperManager';
   const API = `https://api.github.com/repos/${REPO}`;
+  const DOWNLOADS_REPO = 'thusvill/AdvanceWallpaperManager';
+  const DOWNLOADS_API = `https://img.shields.io/github/downloads/${DOWNLOADS_REPO}/total.json`;
   const heroDownload = document.getElementById('heroDownload');
 
   const escapeHtml = (value = '') => String(value)
@@ -158,6 +160,21 @@
     return response.json();
   }
 
+  async function loadDownloadCount() {
+    const target = document.getElementById('heroDownloadCount');
+    if (!target) return;
+
+    try {
+      const response = await fetch(DOWNLOADS_API, { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error(`Shields request failed: ${response.status}`);
+      const data = await response.json();
+      target.textContent = data.value || '—';
+    } catch (error) {
+      console.error('Error fetching download count:', error);
+      target.textContent = 'Unavailable';
+    }
+  }
+
   async function loadGitHub() {
     const releaseList = document.getElementById('releaseList');
     const contributors = document.getElementById('contributors');
@@ -244,5 +261,6 @@
     }
   }
 
+  loadDownloadCount();
   loadGitHub();
 })();

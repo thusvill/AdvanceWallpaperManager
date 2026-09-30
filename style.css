@@ -716,7 +716,8 @@ h3 {
   filter: brightness(.98);
 }
 
-.github-star-button {
+.github-star-button,
+.github-download-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -733,15 +734,21 @@ h3 {
   font-weight: 800;
 }
 
-.github-star-button .icon {
+.github-star-button .icon,
+.github-download-button .icon {
   width: 18px;
   height: 18px;
 }
 
-.github-star-button .star-label {
+.github-star-button .star-label,
+.github-download-button .download-label {
   color: var(--muted);
   font-size: .86rem;
   font-weight: 700;
+}
+
+.github-download-button:hover {
+  background: var(--surface-2);
 }
 
 .hero-meta {
